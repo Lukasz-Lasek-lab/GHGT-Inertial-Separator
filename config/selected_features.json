@@ -1,0 +1,36 @@
+{
+    "dataset_source": "Dane_T5.xlsx",
+    "total_particles": 6417,
+    "base_features": [
+        "Alfa",
+        "Beta",
+        "H1",
+        "H2"
+    ],
+    "engineered_features": [
+        "Beta_cubed",
+        "Alfa_cubed",
+        "log_H1",
+        "Alfa_plus_Beta",
+        "H1_plus_H2",
+        "H1_div_H2",
+        "log_H2"
+    ],
+    "all_selected_features": [
+        "Alfa",
+        "Beta",
+        "H1",
+        "H2",
+        "Beta_cubed",
+        "Alfa_cubed",
+        "log_H1",
+        "Alfa_plus_Beta",
+        "H1_plus_H2",
+        "H1_div_H2",
+        "log_H2"
+    ],
+    "target_names": [
+        "N1",
+        "Delta"
+    ]
+}

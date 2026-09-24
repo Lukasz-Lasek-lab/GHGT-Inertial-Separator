@@ -1,0 +1,62 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+
+# Environments
+.env
+.venv
+venv/
+env/
+ENV/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Local Legacy, Scratch & Agent skills
+legacy/
+scratch/
+.agents/
+
+# Data (strictly excluded)
+data/
+*.csv
+*.xlsx
+*.xls
+*.parquet
+*.h5
+
+# Models (strictly excluded)
+models/
+*.joblib
+*.pkl
+*.pt
+*.pth
+*.onnx
+
+# Output Results, Plots & Figures (strictly excluded)
+results/
+plots/
+figures/
+*.png
+*.svg
+*.pdf
+*.jpg
+*.jpeg
+
+# Logs
+*.log
+logs/
