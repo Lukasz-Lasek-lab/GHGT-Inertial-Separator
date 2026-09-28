@@ -11,7 +11,7 @@ Official source code repository accompanying the research presentation at the **
 <p align="center">
   <img src="assets/qr_code_github.png" alt="GitHub Repository QR Code" width="160"/>
   <br>
-  <em>Scan QR code or visit <a href="https://github.com/Lukasz-Lasek-Lab/MsCO2limit">github.com/Lukasz-Lasek-Lab/MsCO2limit</a></em>
+  <em>Scan QR code or visit <a href="https://github.com/Lukasz-Lasek-Lab/GHGT-Inertial-Separator">github.com/Lukasz-Lasek-Lab/GHGT-Inertial-Separator</a></em>
 </p>
 
 ---
@@ -48,7 +48,7 @@ This framework introduces a high-performance **hybrid AI-driven metamodeling and
 ## Repository Structure
 
 ```text
-MsCO2limit/
+GHGT-Inertial-Separator/
 ├── .gitignore               # Strict exclusion of proprietary CFD data and model binaries
 ├── .env.example             # Optional environment variable template
 ├── LICENSE                  # MIT License (Łukasz Lasek, UJD)
@@ -93,8 +93,8 @@ MsCO2limit/
 ### 2. Clone and Setup Environment
 ```bash
 # Clone the repository
-git clone https://github.com/Lukasz-Lasek-Lab/MsCO2limit.git
-cd MsCO2limit
+git clone https://github.com/Lukasz-Lasek-Lab/GHGT-Inertial-Separator.git
+cd GHGT-Inertial-Separator
 
 # Create virtual environment
 python -m venv venv
@@ -199,12 +199,12 @@ python -m src --all-figures
 If you use this framework, parts of its methodology, or the poster presentation in your research, please cite:
 
 ```bibtex
-@article{MsCO2limit2026,
+@article{GHGT_Inertial_Separator_2026,
   title={Hybrid AI-driven Approach for Optimization and Geometric Analysis of Inertial Separators in Chemical Looping Systems},
   author={Lasek, {\L}ukasz and Contributors},
   journal={18th International Conference on Greenhouse Gas Control Technologies (GHGT)},
   year={2026},
-  url={https://github.com/Lukasz-Lasek-Lab/MsCO2limit}
+  url={https://github.com/Lukasz-Lasek-Lab/GHGT-Inertial-Separator}
 }
 ```
 
