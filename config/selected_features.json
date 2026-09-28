@@ -1,5 +1,5 @@
 {
-    "dataset_source": "Dane_T5.xlsx",
+    "dataset_source": "inertial_separator_cfd_dataset",
     "total_particles": 6417,
     "base_features": [
         "Alfa",

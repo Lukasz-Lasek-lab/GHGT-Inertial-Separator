@@ -1,8 +1,8 @@
 """
-Moduł zarządzania modelem ML dla projektu MsCO2limit.
-Obsługuje architekturę HistGradientBoostingRegressor w MultiOutputRegressor,
-strojenie hiperparametrów przez Optuna z buforowaniem w config/best_params.json,
-trening na pełnym zbiorze danych, walidację krzyżową (CV), serializację i predykcję fizyczną.
+Surrogate Modeling and ML Management module for the MsCO2limit project.
+Handles multi-target regression using HistGradientBoostingRegressor within MultiOutputRegressor,
+hyperparameter tuning via Optuna with caching in config/best_params.json, full-dataset training,
+5-fold cross-validation (CV), serialization, and physically constrained inference.
 """
 
 import json
@@ -19,14 +19,15 @@ from sklearn.multioutput import MultiOutputRegressor
 
 from config.path import (
     config_dir,
-    models_test_5_dir,
-    plots_test_5_dir,
+    surrogate_models_dir,
+    diagnostic_plots_dir,
     processed_data_dir,
-    results_test_5_dir,
+    evaluation_results_dir,
+    demo_data_file,
 )
 from src.features import FEATURE_NAMES, prepare_targets
 
-# Domyślne hiperparametry bazowe
+# Default fallback hyperparameters
 DEFAULT_FALLBACK_PARAMS: Dict[str, Any] = {
     "learning_rate": 0.02,
     "max_depth": 4,
@@ -42,8 +43,8 @@ DEFAULT_FALLBACK_PARAMS: Dict[str, Any] = {
 
 def load_best_params(json_path: Optional[Path] = None) -> Dict[str, Any]:
     """
-    Wczytuje zoptymalizowane hiperparametry z config/best_params.json.
-    W przypadku braku pliku zwraca domyślne parametry fallback.
+    Loads optimized hyperparameters from config/best_params.json.
+    Returns fallback hyperparameters if configuration file is not present.
     """
     if json_path is None:
         json_path = config_dir / "best_params.json"
@@ -55,14 +56,14 @@ def load_best_params(json_path: Optional[Path] = None) -> Dict[str, Any]:
                 if isinstance(params, dict) and "learning_rate" in params:
                     return params
         except Exception as e:
-            print(f"[WARN] Nie mozna wczytac {json_path}: {e}. Uzycie parametrow domyslnych.")
+            print(f"[WARN] Failed to load {json_path}: {e}. Utilizing default parameters.")
 
     return DEFAULT_FALLBACK_PARAMS.copy()
 
 
 def save_best_params(params: Dict[str, Any], json_path: Optional[Path] = None) -> Path:
     """
-    Zapisuje wyznaczone hiperparametry do pliku JSON.
+    Saves optimized hyperparameters to JSON file.
     """
     if json_path is None:
         json_path = config_dir / "best_params.json"
@@ -70,24 +71,24 @@ def save_best_params(params: Dict[str, Any], json_path: Optional[Path] = None) -
     json_path.parent.mkdir(parents=True, exist_ok=True)
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(params, f, indent=4)
-    print(f"[SAVE] Hiperparametry zapisane do: {json_path}")
+    print(f"[SAVE] Hyperparameters saved to: {json_path}")
     return json_path
 
 
-# Globalny słownik aktywnych parametrów
+# Global dictionary of active hyperparameters
 BEST_PARAMS: Dict[str, Any] = load_best_params()
 
 
 def build_regressor(params: Optional[Dict[str, Any]] = None) -> MultiOutputRegressor:
     """
-    Tworzy instancję MultiOutputRegressor z HistGradientBoostingRegressor.
-    Jeśli nie podano parametrów, pobiera je z load_best_params().
+    Constructs MultiOutputRegressor instance wrapping HistGradientBoostingRegressor.
+    Pulls defaults from load_best_params() if not provided.
     """
     model_params = load_best_params()
     if params:
         model_params.update(params)
 
-    # Upewnij się, że typy parametrów są poprawne dla scikit-learn
+    # Ensure integer parameter casting for scikit-learn compatibility
     if "max_depth" in model_params and model_params["max_depth"] is not None:
         model_params["max_depth"] = int(model_params["max_depth"])
     if "min_samples_leaf" in model_params:
@@ -100,6 +101,8 @@ def build_regressor(params: Optional[Dict[str, Any]] = None) -> MultiOutputRegre
         model_params["max_bins"] = int(model_params["max_bins"])
     if "random_state" in model_params:
         model_params["random_state"] = int(model_params["random_state"])
+    if "early_stopping" not in model_params:
+        model_params["early_stopping"] = True
 
     base_regressor = HistGradientBoostingRegressor(**model_params)
     return MultiOutputRegressor(base_regressor, n_jobs=1)
@@ -112,20 +115,21 @@ def tune_hyperparameters(
     random_state: int = 42,
 ) -> Dict[str, Any]:
     """
-    Wykonuje automatyczne strojenie hiperparametrów za pomocą Optuna bezpośrednio na zbiorze danych.
-    Optymalizuje ważony błąd predykcji N1 i Delta w 5-krotnej walidacji krzyżowej (CV).
-    Wynik zapisuje do config/best_params.json.
+    Executes automated Bayesian hyperparameter tuning via Optuna.
+    Minimizes normalized joint prediction loss for N1 and Delta across 5-fold cross-validation.
+    Persists optimal configuration to config/best_params.json.
     """
     import optuna
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     if data_path is None:
-        data_path = processed_data_dir / "df_selected.csv"
+        default_data = processed_data_dir / "df_selected.csv"
+        data_path = default_data if default_data.exists() else demo_data_file
     if save_json_path is None:
         save_json_path = config_dir / "best_params.json"
 
     if not data_path.exists():
-        raise FileNotFoundError(f"Nie znaleziono pliku z danymi do strojenia: {data_path}")
+        raise FileNotFoundError(f"Training dataset for hyperparameter tuning not found: {data_path}")
 
     df = pd.read_csv(data_path)
     X = df[FEATURE_NAMES].values
@@ -135,7 +139,7 @@ def tune_hyperparameters(
     std_n1 = float(np.std(y[:, 0])) if np.std(y[:, 0]) > 0 else 1.0
     std_delta = float(np.std(y[:, 1])) if np.std(y[:, 1]) > 0 else 1.0
 
-    print(f"[OPTUNA] Rozpoczynanie strojenia hiperparametrow ({n_trials} prob)...")
+    print(f"[OPTUNA] Starting surrogate hyperparameter optimization ({n_trials} trials)...")
 
     def objective(trial: optuna.Trial) -> float:
         params = {
@@ -185,11 +189,11 @@ def tune_hyperparameters(
     best_p["random_state"] = random_state
 
     print("\n" + "=" * 60)
-    print("OPTUNA: Znaleziono najlepsze hiperparametry:")
+    print("OPTUNA: Optimal Hyperparameters Discovered:")
     print("-" * 60)
     for k, v in best_p.items():
         print(f"  {k:20s}: {v}")
-    print(f"  Najlepszy wynik CV loss : {study.best_value:.5f}")
+    print(f"  Best 5-Fold CV Loss : {study.best_value:.5f}")
     print("=" * 60)
 
     save_best_params(best_p, save_json_path)
@@ -205,7 +209,7 @@ def train_model(
     params: Optional[Dict[str, Any]] = None,
 ) -> MultiOutputRegressor:
     """
-    Trenuje model na zadanych danych X i y.
+    Trains surrogate MultiOutputRegressor on input features X and multi-targets y.
     """
     model = build_regressor(params)
     model.fit(X, y)
@@ -218,16 +222,17 @@ def train_final_model(
     params: Optional[Dict[str, Any]] = None,
 ) -> Tuple[MultiOutputRegressor, Path]:
     """
-    Trenuje model produkcyjny na 100% dostępnych danych (df_selected.csv)
-    z użyciem wyznaczonych hiperparametrów i zapisuje go na dysku.
+    Trains final production surrogate model on 100% available data
+    using optimized hyperparameters and serializes model to disk.
     """
     if data_path is None:
-        data_path = processed_data_dir / "df_selected.csv"
+        default_data = processed_data_dir / "df_selected.csv"
+        data_path = default_data if default_data.exists() else demo_data_file
     if save_path is None:
-        save_path = models_test_5_dir / "Final_Model.joblib"
+        save_path = surrogate_models_dir / "surrogate_regressor.joblib"
 
     if not data_path.exists():
-        raise FileNotFoundError(f"Nie znaleziono pliku z danymi: {data_path}")
+        raise FileNotFoundError(f"Training dataset not found: {data_path}")
 
     df = pd.read_csv(data_path)
     X = df[FEATURE_NAMES]
@@ -240,20 +245,37 @@ def train_final_model(
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, save_path)
-    print(f"[OK] Model produkcyjny wytrenowany na 100% danych ({len(df)} rekordow) i zapisany do: {save_path}")
+    # Also save to legacy path Final_Model.joblib for complete backward compatibility
+    legacy_save = surrogate_models_dir / "Final_Model.joblib"
+    joblib.dump(model, legacy_save)
 
+    print(f"[OK] Production surrogate model trained on {len(df)} samples and saved to: {save_path}")
     return model, save_path
 
 
 def load_model(model_path: Optional[Path] = None) -> MultiOutputRegressor:
     """
-    Wczytuje wytrenowany model z dysku. Domyślnie models/test_5/Final_Model.joblib.
+    Loads pre-trained surrogate model from disk.
+    Checks surrogate_regressor.joblib and Final_Model.joblib before raising informative error.
     """
     if model_path is None:
-        model_path = models_test_5_dir / "Final_Model.joblib"
+        candidates = [
+            surrogate_models_dir / "surrogate_regressor.joblib",
+            surrogate_models_dir / "Final_Model.joblib",
+        ]
+        for c in candidates:
+            if c.exists():
+                model_path = c
+                break
+        if model_path is None:
+            model_path = candidates[0]
 
     if not model_path.exists():
-        raise FileNotFoundError(f"Nie znaleziono modelu pod ścieżką: {model_path}")
+        raise FileNotFoundError(
+            f"Pre-trained surrogate model weights not found at: {model_path}.\n"
+            "Please train the model first ('python -m src --train --demo') or consult the "
+            "Data and Model Availability Statement in README.md."
+        )
 
     model = joblib.load(model_path)
     return model
@@ -264,13 +286,13 @@ def predict(
     X: Union[pd.DataFrame, np.ndarray],
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Wykonuje predykcję z uwzględnieniem fizycznych ograniczeń:
-    - N1 >= 0 (brak ujemnych cząstek)
-    - Delta >= 0 (Delta = N2 - N1)
-    - N2 = N1 + Delta (N2 >= N1)
+    Performs inference with physical consistency constraints:
+    - N1 >= 0 (non-negative particle loss)
+    - Delta >= 0 (net capture advantage)
+    - N2 = N1 + Delta (captured carrier particles)
     
     Returns:
-        (N1_pred, N2_pred, Delta_pred)
+        Tuple of (N1_pred, N2_pred, Delta_pred)
     """
     if isinstance(X, pd.DataFrame):
         if all(col in X.columns for col in FEATURE_NAMES):
@@ -289,21 +311,21 @@ def plot_actual_vs_predicted(
     y_true_df: pd.DataFrame,
     y_pred_df: pd.DataFrame,
     save_path: Optional[Path] = None,
-    title_prefix: str = "Predykcje vs Rzeczywistosc (OOF CV)",
+    title_prefix: str = "Predictions vs. Actual (OOF 5-Fold CV)",
 ) -> None:
     """
-    Generuje diagnostyczny wykres jakości modelu:
-    - 3 wykresy rozrzutu: N1, N2 i Delta (y_true vs y_pred) z linią idealnego dopasowania y=x
-    - 1 wykres rozkładu reszt (residuals = y_true - y_pred)
+    Generates standard diagnostic parity and error distribution plots:
+    - 3 scatter plots: N1, N2, and Delta (actual vs. predicted) with identity lines (y = x)
+    - 1 residual distribution histogram
     """
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 12))
 
     targets = [
-        ("N1", "tab:blue", axes[0, 0]),
-        ("N2", "tab:orange", axes[0, 1]),
-        ("Delta", "tab:green", axes[1, 0]),
+        ("N1", "#0072B2", axes[0, 0]),
+        ("N2", "#D55E00", axes[0, 1]),
+        ("Delta", "#009E73", axes[1, 0]),
     ]
 
     for target_name, color, ax in targets:
@@ -314,42 +336,42 @@ def plot_actual_vs_predicted(
         mae = mean_absolute_error(y_t, y_p)
         rmse = np.sqrt(mean_squared_error(y_t, y_p))
 
-        ax.scatter(y_t, y_p, color=color, alpha=0.75, edgecolors="black", linewidth=0.5, s=55, label="Punkty pomiarowe")
+        ax.scatter(y_t, y_p, color=color, alpha=0.75, edgecolors="#1A1A1A", linewidth=0.5, s=55, label="Data points")
 
         min_val = min(y_t.min(), y_p.min())
         max_val = max(y_t.max(), y_p.max())
         margin = 0.05 * (max_val - min_val) if max_val != min_val else 1.0
         line_vals = np.linspace(min_val - margin, max_val + margin, 100)
-        ax.plot(line_vals, line_vals, color="red", linestyle="--", linewidth=1.8, label="Idealne dopasowanie (y = x)")
+        ax.plot(line_vals, line_vals, color="#000000", linestyle="--", linewidth=1.5, label="Identity line ($y = x$)")
 
-        ax.set_title(f"{target_name}: Rzeczywiste vs Przewidywane")
-        ax.set_xlabel(f"{target_name} rzeczywiste [CFD]")
-        ax.set_ylabel(f"{target_name} przewidywane [Model]")
+        ax.set_title(f"{target_name}: Actual vs. Predicted")
+        ax.set_xlabel(f"Actual {target_name} [CFD]")
+        ax.set_ylabel(f"Predicted {target_name} [Surrogate]")
         ax.grid(True, linestyle=":", alpha=0.6)
 
-        stats_text = f"R² = {r2:.4f}\nMAE = {mae:.2f}\nRMSE = {rmse:.2f}"
+        stats_text = f"$R^2 = {r2:.4f}$\nMAE = {mae:.2f}\nRMSE = {rmse:.2f}"
         ax.text(
             0.05,
             0.92,
             stats_text,
             transform=ax.transAxes,
             verticalalignment="top",
-            bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="gray", alpha=0.85),
+            bbox=dict(boxstyle="square,pad=0.4", facecolor="white", edgecolor="#CCCCCC", alpha=0.9),
             fontsize=10,
         )
         ax.legend(loc="lower right", fontsize=9)
 
-    # 4. Wykres rozkładu reszt
+    # Residual distribution plot
     ax_res = axes[1, 1]
     res_n1 = y_true_df["N1"].values - y_pred_df["N1"].values
     res_n2 = y_true_df["N2"].values - y_pred_df["N2"].values
 
-    ax_res.hist(res_n1, bins=20, alpha=0.6, color="tab:blue", label="Reszty N1 (y_true - y_pred)", edgecolor="black")
-    ax_res.hist(res_n2, bins=20, alpha=0.6, color="tab:orange", label="Reszty N2 (y_true - y_pred)", edgecolor="black")
-    ax_res.axvline(0, color="red", linestyle="--", linewidth=1.5)
-    ax_res.set_title("Rozklad bledow predykcji (Residua)")
-    ax_res.set_xlabel("Blad (y_true - y_pred)")
-    ax_res.set_ylabel("Licznosc")
+    ax_res.hist(res_n1, bins=20, alpha=0.65, color="#0072B2", label="Residuals $N_1$ ($y - \\hat{y}$)", edgecolor="black")
+    ax_res.hist(res_n2, bins=20, alpha=0.60, color="#D55E00", label="Residuals $N_2$ ($y - \\hat{y}$)", edgecolor="black")
+    ax_res.axvline(0, color="#000000", linestyle="--", linewidth=1.5)
+    ax_res.set_title("Residual Error Distribution")
+    ax_res.set_xlabel("Prediction Error ($y_{\\mathrm{actual}} - y_{\\mathrm{pred}}$)")
+    ax_res.set_ylabel("Frequency [samples]")
     ax_res.grid(True, linestyle=":", alpha=0.6)
     ax_res.legend(loc="upper right", fontsize=9)
 
@@ -359,7 +381,7 @@ def plot_actual_vs_predicted(
     if save_path:
         save_path.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(save_path, dpi=150)
-        print(f"[PLOT] Wykres diagnostyczny zapisany do: {save_path}")
+        print(f"[PLOT] Diagnostic plot saved to: {save_path}")
     plt.close()
 
 
@@ -370,11 +392,18 @@ def evaluate_cv(
     save_plot_path: Optional[Path] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Przeprowadza 5-krotną walidację krzyżową (K-Fold CV), zbiera predykcje out-of-fold (OOF),
-    generuje wykres diagnostyczny i zwraca: (df_folds, df_summary, oof_df).
+    Executes 5-fold cross-validation, aggregates Out-Of-Fold (OOF) predictions,
+    and returns (df_folds, df_summary, oof_df).
     """
     if data_path is None:
-        data_path = processed_data_dir / "df_selected.csv"
+        default_data = processed_data_dir / "df_selected.csv"
+        data_path = default_data if default_data.exists() else demo_data_file
+
+    if not data_path.exists():
+        raise FileNotFoundError(
+            f"Dataset file not found: {data_path}.\n"
+            "Run with '--demo' for synthetic demonstration or see README.md."
+        )
 
     df = pd.read_csv(data_path)
     X = df[FEATURE_NAMES].values
@@ -450,7 +479,7 @@ def evaluate_cv(
             y_true_df,
             y_pred_df,
             save_path=save_plot_path,
-            title_prefix=f"Model Test 5 ({len(df)} rekordow): Rzeczywiste vs OOF CV Predykcje",
+            title_prefix=f"Surrogate Model ({len(df)} samples): Actual vs. OOF CV Predictions",
         )
 
     return df_folds, df_summary, oof_df
@@ -463,14 +492,14 @@ def evaluate_train_test(
     save_plot_path: Optional[Path] = None,
 ) -> Tuple[MultiOutputRegressor, Dict[str, float], pd.DataFrame, pd.DataFrame]:
     """
-    Dzieli dane na zbiór treningowy i testowy (80/20), trenuje model na zbiorze
-    treningowym, wykonuje predykcję na teście, oblicza metryki i generuje wykres.
+    Performs train/test split evaluation (default: 80/20 train/test split).
     """
     if data_path is None:
-        data_path = processed_data_dir / "df_selected.csv"
+        default_data = processed_data_dir / "df_selected.csv"
+        data_path = default_data if default_data.exists() else demo_data_file
 
     if not data_path.exists():
-        raise FileNotFoundError(f"Nie znaleziono pliku z danymi: {data_path}")
+        raise FileNotFoundError(f"Dataset file not found: {data_path}")
 
     df = pd.read_csv(data_path)
     X = df[FEATURE_NAMES]
@@ -507,15 +536,15 @@ def evaluate_train_test(
             y_true_df,
             y_pred_df,
             save_path=save_plot_path,
-            title_prefix=f"Model Test 5: Zbiór testowy ({int(test_size * 100)}% danych)",
+            title_prefix=f"Surrogate Model: Test Set Evaluation ({int(test_size * 100)}% held-out)",
         )
 
     return model, metrics, y_true_df, y_pred_df
 
 
 if __name__ == "__main__":
-    print("[INFO] Uruchamianie ewaluacji modelu...")
-    plot_cv_path = plots_test_5_dir / "actual_vs_predicted_cv.png"
+    print("[INFO] Executing surrogate model cross-validation evaluation...")
+    plot_cv_path = diagnostic_plots_dir / "actual_vs_predicted_cv.png"
     df_folds, df_summary, oof_df = evaluate_cv(save_plot_path=plot_cv_path)
-    print("\n--- Podsumowanie 5-fold CV ---")
+    print("\n--- 5-Fold Cross-Validation Metrics Summary ---")
     print(df_summary.to_string(index=False))

@@ -2,7 +2,7 @@
 Unified Publication Figures Generator for Q1 Chemical Engineering Journal:
 'Hybrid AI-driven Approach for Optimization and Geometric Analysis of Inertial Separators in Chemical Looping Systems'
 
-Generates publication-quality vector (PDF, SVG) and raster (PNG) figures:
+Generates publication-quality vector (PDF, SVG) and raster (PNG, 300+ DPI) figures:
 - Figure 2: Model Diagnostics & Residual Analysis (5-Fold CV OOF)
 - Figure 3: Geometric & Aerodynamic Feature Importance (Permutation Importance / XAI)
 - Figure 4: Sensitivity Sweep Profiles (1D Dual-Y and 2D Interaction Contours)
@@ -21,11 +21,12 @@ import joblib
 from config.path import (
     figures_dir as default_figures_dir,
     processed_data_dir,
-    models_test_5_dir,
-    results_genetic_dir,
+    demo_data_file,
+    surrogate_models_dir,
+    optimization_results_dir,
 )
 from src.features import BASE_FEATURES, FEATURE_NAMES, create_features
-from src.models import evaluate_cv, load_model, predict
+from src.models import evaluate_cv, load_model, predict, train_final_model
 from src.visualization.publication_plots import (
     plot_model_diagnostics,
     plot_feature_importance,
@@ -69,6 +70,28 @@ class _N2PredictorWrapper:
         return n1 + delta
 
 
+def _ensure_active_dataset() -> Path:
+    """Ensures a valid dataset exists (processed CFD data or demonstration data)."""
+    default_data = processed_data_dir / "df_selected.csv"
+    if default_data.exists():
+        return default_data
+    if demo_data_file.exists():
+        print(f"[INFO] Using demonstration dataset: {demo_data_file.name}")
+        return demo_data_file
+    raise FileNotFoundError("Neither processed CFD dataset nor demonstration dataset found.")
+
+
+def _ensure_active_model():
+    """Ensures a trained surrogate model exists, training on available dataset if necessary."""
+    try:
+        return load_model()
+    except FileNotFoundError:
+        print("[INFO] Model weights not found. Training surrogate model on active dataset...")
+        data_path = _ensure_active_dataset()
+        model, _ = train_final_model(data_path=data_path)
+        return model
+
+
 def generate_figure_2(
     output_dir: Optional[Path] = None,
     formats: Sequence[str] = ("pdf", "svg", "png"),
@@ -78,15 +101,14 @@ def generate_figure_2(
     oof_cache = processed_data_dir / "oof_predictions.csv"
 
     if oof_cache.exists():
-        print(f"[INFO] Loading cached OOF predictions from: {oof_cache}")
+        print(f"[INFO] Loading cached OOF predictions from: {oof_cache.name}")
         oof_df = pd.read_csv(oof_cache)
     else:
-        data_file = processed_data_dir / "df_selected.csv"
-        if not data_file.exists():
-            raise FileNotFoundError(f"Dataset file not found: {data_file}")
-        print(f"[INFO] Computing 5-fold cross-validation OOF on: {data_file}")
+        data_file = _ensure_active_dataset()
+        print(f"[INFO] Computing 5-fold cross-validation OOF on: {data_file.name}")
         _, df_summary, oof_df = evaluate_cv(data_path=data_file)
-        oof_df.to_csv(oof_cache, index=False)
+        if data_file == processed_data_dir / "df_selected.csv":
+            oof_df.to_csv(oof_cache, index=False)
         print(df_summary.to_string(index=False))
 
     y_true_df = pd.DataFrame({
@@ -118,29 +140,23 @@ def generate_figure_3(
 ) -> Dict[str, Any]:
     """Generates Figure 3: Permutation Feature Importance for N1, N2, and Delta."""
     out = Path(output_dir) if output_dir else default_figures_dir
-    data_file = processed_data_dir / "df_selected.csv"
-    model_file = models_test_5_dir / "Final_Model.joblib"
+    data_file = _ensure_active_dataset()
     cache_file = processed_data_dir / "feature_importance_cache.json"
 
-    if not data_file.exists():
-        raise FileNotFoundError(f"Dataset not found: {data_file}")
-    if not model_file.exists():
-        raise FileNotFoundError(f"Model weights not found: {model_file}")
-
-    if cache_file.exists():
-        print(f"[INFO] Loading cached feature importance from: {cache_file}")
+    if cache_file.exists() and data_file == processed_data_dir / "df_selected.csv":
+        print(f"[INFO] Loading cached feature importance from: {cache_file.name}")
         with open(cache_file, "r", encoding="utf-8") as f:
             cache_data = json.load(f)
         importance_dict = {k: pd.DataFrame(v) for k, v in cache_data.items()}
     else:
-        print(f"[INFO] Computing Permutation Importance ({n_repeats} repeats)...")
+        print(f"[INFO] Computing Permutation Feature Importance ({n_repeats} repeats)...")
         df = pd.read_csv(data_file)
         X = df[FEATURE_NAMES]
         y_n1 = df["N1"]
         y_n2 = df["N2"]
         y_delta = df["Delta"]
 
-        model = joblib.load(model_file)
+        model = _ensure_active_model()
         est_n1 = model.estimators_[0]
         est_delta = model.estimators_[1]
         est_n2 = _N2PredictorWrapper(model)
@@ -173,9 +189,10 @@ def generate_figure_3(
             importance_dict[t_name] = pd.DataFrame(rows)
             json_cache[t_name] = rows
 
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(json_cache, f, indent=4)
+        if data_file == processed_data_dir / "df_selected.csv":
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(json_cache, f, indent=4)
 
     print(f"[INFO] Generating Figure 3 into: {out}")
     return plot_feature_importance(
@@ -196,11 +213,7 @@ def generate_figure_4(
 ) -> Dict[str, Any]:
     """Generates Figure 4: Sensitivity 1D sweeps and 2D contour interaction maps."""
     out = Path(output_dir) if output_dir else default_figures_dir
-    model_path = models_test_5_dir / "Final_Model.joblib"
-    if not model_path.exists():
-        raise FileNotFoundError(f"Model weights not found: {model_path}")
-
-    model = joblib.load(model_path)
+    model = _ensure_active_model()
 
     # 1. 1D Sweeps
     sweep_results = {}
@@ -264,28 +277,37 @@ def generate_figure_5(
 ) -> Dict[str, Any]:
     """Generates Figure 5: NSGA-II Multi-Objective Convergence and Pareto Front Trade-off."""
     out = Path(output_dir) if output_dir else default_figures_dir
-    log_path = results_genetic_dir / "convergence_log.csv"
-    pareto_path = results_genetic_dir / "Test5_Results_src.csv"
+    log_path = optimization_results_dir / "convergence_log.csv"
 
-    if not pareto_path.exists():
-        pareto_path = results_genetic_dir / "genetic_results_pareto_Genetyka_Test5_2026-09-18_15-20-28.csv"
-    if not log_path.exists():
-        raise FileNotFoundError(f"Convergence log not found: {log_path}")
+    # Dynamic search for Pareto front solutions
+    pareto_candidates = [
+        optimization_results_dir / "pareto_optimal_designs.csv",
+        optimization_results_dir / "pareto_front.csv",
+        optimization_results_dir / "Test5_Results_src.csv",
+    ]
+    pareto_candidates.extend(list(optimization_results_dir.glob("pareto_front*.csv")))
+    pareto_candidates.extend(list(optimization_results_dir.glob("genetic_results_pareto*.csv")))
+    pareto_path = next((p for p in pareto_candidates if p.exists()), None)
 
-    log_df = pd.read_csv(log_path)
-    pareto_df = pd.read_csv(pareto_path)
+    model = _ensure_active_model()
 
-    model_path = models_test_5_dir / "Final_Model.joblib"
-    model = load_model(model_path)
+    # If optimization files are missing, run NSGA-II to generate them
+    if pareto_path is None or not log_path.exists():
+        print("[INFO] Optimization history not found. Running NSGA-II optimization...")
+        from src.genetic import run_genetic_optimization
+        _, _, pareto_df, log_df = run_genetic_optimization(pop_size=60, n_gen=15)
+    else:
+        log_df = pd.read_csv(log_path)
+        pareto_df = pd.read_csv(pareto_path)
 
-    # Exact model predictions for Pareto points
+    # Re-evaluate model predictions for Pareto points
     X_pareto = create_features(pareto_df[["Alfa", "Beta", "H1", "H2"]])
     n1_par, n2_par, delta_par = predict(model, X_pareto)
     pareto_df["N1_pred"] = n1_par
     pareto_df["N2_pred"] = n2_par
     pareto_df["Delta_pred"] = delta_par
 
-    # Baseline point
+    # Baseline CFD reference point
     df_ref = pd.DataFrame([DEFAULT_REFERENCE_PARAMS])
     X_ref = create_features(df_ref)
     n1_cfd, n2_cfd, delta_cfd = predict(model, X_ref)
@@ -295,7 +317,7 @@ def generate_figure_5(
         "Delta": float(delta_cfd[0]),
     }
 
-    # Exploration background sample
+    # Design space exploration background cloud
     np.random.seed(42)
     n_sample = 1200
     df_explored = pd.DataFrame({
@@ -310,9 +332,10 @@ def generate_figure_5(
     df_explored["N2_pred"] = n2_exp
     df_explored["Delta_pred"] = delta_exp
 
-    pop_path = results_genetic_dir / "genetic_results_pop_Genetyka_Test5_2026-09-18_15-20-28.csv"
-    if pop_path.exists():
-        df_pop = pd.read_csv(pop_path)
+    # Search for population export files
+    pop_candidates = list(optimization_results_dir.glob("population*.csv")) + list(optimization_results_dir.glob("genetic_results_pop*.csv"))
+    if pop_candidates:
+        df_pop = pd.read_csv(pop_candidates[0])
         all_explored_df = pd.concat([df_explored, df_pop], ignore_index=True)
     else:
         all_explored_df = df_explored
@@ -345,8 +368,7 @@ def generate_figure_6(
 ) -> Dict[str, Any]:
     """Generates Figure 6: Engineering Validation Case Study (Baseline vs. Pareto Optima)."""
     out = Path(output_dir) if output_dir else default_figures_dir
-    model_path = models_test_5_dir / "Final_Model.joblib"
-    model = load_model(model_path)
+    model = _ensure_active_model()
 
     geo_baseline = {"Alfa": 60.0, "Beta": 60.0, "H1": 0.0380, "H2": 0.0380}
     geo_opt1 = {"Alfa": 43.56, "Beta": 48.24, "H1": 0.0323, "H2": 0.0588}

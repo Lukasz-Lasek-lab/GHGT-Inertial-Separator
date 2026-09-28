@@ -1,7 +1,8 @@
 """
-Wielokryterialna optymalizacja ewolucyjna geometrii separatora (NSGA-II).
-Wykorzystuje bibliotekę DEAP (opcjonalnie PyMoo z fallbackiem do implementacji wbudowanej)
-do wyszukiwania frontu Pareto w przestrzeni parametrów (Alfa, Beta, H1, H2) w celu minimalizacji N1 i maksymalizacji Delta.
+Multi-Objective Evolutionary Optimization (NSGA-II) for Inertial Separator Geometry.
+Utilizes the DEAP framework (with PyMoo / built-in non-dominated sorting fallback)
+to explore the 4D design space (Alfa, Beta, H1, H2) for Pareto trade-offs:
+minimizing particle loss N1 and maximizing net capture advantage Delta.
 """
 
 import os
@@ -16,25 +17,25 @@ import numpy as np
 import pandas as pd
 
 from config.path import (
-    models_test_5_dir,
-    plots_genetic_dir,
+    surrogate_models_dir,
+    optimization_plots_dir,
     processed_data_dir,
-    results_genetic_dir,
+    optimization_results_dir,
+    demo_data_file,
 )
 from src.features import BASE_FEATURES, create_features
-from src.models import load_model, predict
+from src.models import load_model, predict, train_final_model
 
 os.environ["LOKY_MAX_CPU_COUNT"] = "4"
 
 
 def compute_non_dominated_fronts(fitnesses: np.ndarray) -> List[np.ndarray]:
     """
-    Oblicza fronty Pareto (Non-Dominated Sorting).
-    Jeśli biblioteka pymoo jest zainstalowana, używa PyMoo.
-    W przeciwnym razie wykorzystuje wbudowaną implementację algorytmu szybkiego
-    sortowania niedominowanego (Deb et al., 2002).
+    Computes Pareto non-dominated fronts using PyMoo when available,
+    or falls back to built-in fast non-dominated sorting (Deb et al., 2002).
     
-    fitnesses: tablica (N, 2), gdzie oba cele są minimalizowane.
+    Args:
+        fitnesses: (N, 2) array where both objectives are formulated for minimization.
     """
     try:
         from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
@@ -49,7 +50,7 @@ def compute_non_dominated_fronts(fitnesses: np.ndarray) -> List[np.ndarray]:
             for q in range(n):
                 if p == q:
                     continue
-                # p dominuje q jeśli p <= q we wszystkich i p < q w co najmniej jednym
+                # p dominates q if p <= q in all objectives and p < q in at least one
                 p_dom = (fitnesses[p, 0] <= fitnesses[q, 0] and fitnesses[p, 1] <= fitnesses[q, 1]) and \
                         (fitnesses[p, 0] < fitnesses[q, 0] or fitnesses[p, 1] < fitnesses[q, 1])
                 q_dom = (fitnesses[q, 0] <= fitnesses[p, 0] and fitnesses[q, 1] <= fitnesses[p, 1]) and \
@@ -87,8 +88,8 @@ def setup_toolbox(
     indpb: float = 0.7,
 ) -> base.Toolbox:
     """
-    Konfiguruje DEAP Toolbox dla problemu optymalizacji 4 parametrów geometrii.
-    Target: (-1.0, 1.0) -> minimalizacja N1, maksymalizacja Delta.
+    Configures DEAP Toolbox for 4-parameter inertial separator geometry optimization.
+    Fitness weights: (-1.0, 1.0) -> minimize N1 (loss), maximize Delta (advantage).
     """
     if not hasattr(creator, "FitnessMulti"):
         creator.create("FitnessMulti", base.Fitness, weights=(-1.0, 1.0))
@@ -146,7 +147,8 @@ def setup_toolbox(
         items = list(iterable)
         if not items:
             return []
-        if func == evaluate:
+        # Support both direct function and functools.partial wrapper registered in DEAP
+        if func == evaluate or getattr(func, "func", None) == evaluate:
             rows = [{"Alfa": ind[0], "Beta": ind[1], "H1": ind[2], "H2": ind[3]} for ind in items]
             df_all = pd.DataFrame(rows)
             X_feat = create_features(df_all)
@@ -167,9 +169,9 @@ def setup_toolbox(
     return toolbox
 
 
-# Domyslne zakresy parametrow wg danych wejsciowych (Dane_T5.xlsx):
-# - Kąty (Alfa, Beta): zakres bazowy 45° do 60° -> rozszerzenie tylko w dół o 5% z 45° (42.75° do 60.0°)
-# - Wysokości (H1, H2): zakres bazowy 0.008 m do 0.058 m -> dolna granica sztywno 0.008 m (8 mm), rozszerzenie tylko w górę o 5% z 0.058 m (0.0609 m)
+# Physical domain bounds for inertial separator design:
+# - Angles (Alfa, Beta): [42.75 deg, 60.00 deg]
+# - Heights (H1, H2): [0.0080 m, 0.0609 m] (8.0 mm to 60.9 mm)
 DEFAULT_PARAM_BOUNDS: Dict[str, Tuple[float, float]] = {
     "Alfa": (42.75, 60.0),
     "Beta": (42.75, 60.0),
@@ -189,29 +191,32 @@ def run_genetic_optimization(
     seed: int = 42,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Uruchamia algorytm genetyczny i zwraca:
-    - pop_df: cała ostatnia populacja z rangami dominacji
-    - hof_df: rozwiązania z Hall of Fame
-    - pareto_df: front Pareto (ranga dominacji == 0)
-    - log_df: historia zbieżności pokoleń
+    Executes multi-objective NSGA-II evolutionary optimization and returns:
+    - pop_df: entire final population annotated with non-dominated ranks
+    - hof_df: solutions in Hall of Fame
+    - pareto_df: non-dominated Pareto front (domination_rank == 0)
+    - log_df: generation convergence history
     """
     random.seed(seed)
     np.random.seed(seed)
 
     if model_path is None:
-        model_path = models_test_5_dir / "Final_Model.joblib"
-    if data_path is None:
-        data_path = processed_data_dir / "df_selected.csv"
+        candidates = [
+            surrogate_models_dir / "surrogate_regressor.joblib",
+            surrogate_models_dir / "Final_Model.joblib",
+        ]
+        model_path = next((c for c in candidates if c.exists()), candidates[0])
 
-    model = load_model(model_path)
-
-    # Ustalenie zakresów parametrów
-    if param_bounds is None:
-        bounds_to_use = DEFAULT_PARAM_BOUNDS.copy()
+    if not model_path.exists():
+        print(f"[INFO] Surrogate model not found at {model_path}. Training initial surrogate...")
+        train_data = data_path if data_path and Path(data_path).exists() else None
+        model, _ = train_final_model(data_path=train_data)
     else:
-        bounds_to_use = param_bounds.copy()
+        model = load_model(model_path)
 
-    print(f"[PARAM] Zakresy parametrow wejsciowych: {bounds_to_use}")
+    # Establish parameter bounds
+    bounds_to_use = DEFAULT_PARAM_BOUNDS.copy() if param_bounds is None else param_bounds.copy()
+    print(f"[PARAM] Geometric design space bounds: {bounds_to_use}")
 
     toolbox = setup_toolbox(model, bounds_to_use)
     pop = toolbox.population(n=pop_size)
@@ -223,7 +228,7 @@ def run_genetic_optimization(
     stats.register("min", np.min, axis=0)
     stats.register("max", np.max, axis=0)
 
-    print(f"[INFO] Uruchamianie algorytmu NSGA-II: pop_size={pop_size}, n_gen={n_gen}...")
+    print(f"[INFO] Launching NSGA-II: Population={pop_size}, Generations={n_gen}...")
     pop, logbook = algorithms.eaMuPlusLambda(
         pop,
         toolbox,
@@ -239,35 +244,35 @@ def run_genetic_optimization(
 
     log_df = pd.DataFrame(logbook)
     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
-    base_name = "Genetyka_Test5"
+    base_name = "optimization_nsga2"
 
-    # Wykres zbieżności
+    # Convergence plot
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-    ax1.plot(log_df.index, log_df["avg"].apply(lambda x: x[0]), label="Average N1")
-    ax1.plot(log_df.index, log_df["min"].apply(lambda x: x[0]), label="Min. N1", color="green")
-    ax1.plot(log_df.index, log_df["max"].apply(lambda x: x[0]), label="Max. N1", color="red")
-    ax1.set_title("Zbieżność N1 (minimalizacja)")
-    ax1.set_ylabel("N1")
+    ax1.plot(log_df.index, log_df["avg"].apply(lambda x: x[0]), label="Mean $N_1$", color="#0072B2")
+    ax1.plot(log_df.index, log_df["min"].apply(lambda x: x[0]), label="Min $N_1$", color="#009E73")
+    ax1.plot(log_df.index, log_df["max"].apply(lambda x: x[0]), label="Max $N_1$", color="#D55E00")
+    ax1.set_title("Convergence of Particle Loss $N_1$ (Minimization)")
+    ax1.set_ylabel("$N_1$ [particles/s]")
     ax1.legend()
-    ax1.grid(True)
+    ax1.grid(True, linestyle=":", alpha=0.6)
 
-    ax2.plot(log_df.index, log_df["avg"].apply(lambda x: x[1]), label="Average Delta")
-    ax2.plot(log_df.index, log_df["min"].apply(lambda x: x[1]), label="Min. Delta", color="red")
-    ax2.plot(log_df.index, log_df["max"].apply(lambda x: x[1]), label="Max. Delta", color="green")
-    ax2.set_title("Zbieżność Delta (maksymalizacja)")
-    ax2.set_xlabel("Generacja")
-    ax2.set_ylabel("Delta")
+    ax2.plot(log_df.index, log_df["avg"].apply(lambda x: x[1]), label="Mean $\\Delta$", color="#0072B2")
+    ax2.plot(log_df.index, log_df["min"].apply(lambda x: x[1]), label="Min $\\Delta$", color="#D55E00")
+    ax2.plot(log_df.index, log_df["max"].apply(lambda x: x[1]), label="Max $\\Delta$", color="#009E73")
+    ax2.set_title("Convergence of Net Capture Advantage $\\Delta$ (Maximization)")
+    ax2.set_xlabel("Generation")
+    ax2.set_ylabel("$\\Delta$ [particles/s]")
     ax2.legend()
-    ax2.grid(True)
+    ax2.grid(True, linestyle=":", alpha=0.6)
 
-    plot_file = plots_genetic_dir / f"{base_name}_{timestamp}_convergence.png"
-    plots_genetic_dir.mkdir(parents=True, exist_ok=True)
+    plot_file = optimization_plots_dir / f"{base_name}_{timestamp}_convergence.png"
+    optimization_plots_dir.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
-    plt.savefig(plot_file)
+    plt.savefig(plot_file, dpi=200)
     plt.close()
-    print(f"[PLOT] Wykres zbieznosci zapisany do: {plot_file}")
+    print(f"[PLOT] Optimization convergence plot saved to: {plot_file}")
 
-    # Ekstrakcja populacji
+    # Extract population records
     pop_records = []
     for ind in pop:
         n1_pred, delta_pred, n2_pred = ind.prediction
@@ -280,7 +285,7 @@ def run_genetic_optimization(
         pop_records.append(rec)
     pop_df = pd.DataFrame(pop_records)
 
-    # Sortowanie niedominowane (PyMoo lub fallback wbudowany)
+    # Non-dominated sorting
     fitnesses = np.array([(r["N1_pred"], -r["Delta_pred"]) for r in pop_records])
     fronts = compute_non_dominated_fronts(fitnesses)
 
@@ -293,7 +298,7 @@ def run_genetic_optimization(
 
     pareto_df = pop_df[pop_df["domination_rank"] == 0].copy().reset_index(drop=True)
 
-    # Ekstrakcja Hall of Fame
+    # Hall of Fame records
     hof_records = []
     for ind in hof:
         n1_pred, delta_pred, n2_pred = ind.prediction
@@ -306,11 +311,13 @@ def run_genetic_optimization(
         hof_records.append(rec)
     hof_df = pd.DataFrame(hof_records)
 
-    # Zapis wyników
-    results_genetic_dir.mkdir(parents=True, exist_ok=True)
-    pop_df.to_csv(results_genetic_dir / f"genetic_results_pop_{base_name}_{timestamp}.csv", index=False)
-    hof_df.to_csv(results_genetic_dir / f"genetic_results_hof_{base_name}_{timestamp}.csv", index=False)
-    pareto_df.to_csv(results_genetic_dir / f"genetic_results_pareto_{base_name}_{timestamp}.csv", index=False)
+    # Export optimization results
+    optimization_results_dir.mkdir(parents=True, exist_ok=True)
+    pop_df.to_csv(optimization_results_dir / f"population_{base_name}_{timestamp}.csv", index=False)
+    hof_df.to_csv(optimization_results_dir / f"hof_{base_name}_{timestamp}.csv", index=False)
+    pareto_df.to_csv(optimization_results_dir / f"pareto_front_{base_name}_{timestamp}.csv", index=False)
+    # Also save canonical files for reliable pipeline pickup
+    pareto_df.to_csv(optimization_results_dir / "pareto_front.csv", index=False)
 
     log_export = pd.DataFrame({
         "gen": log_df.index,
@@ -323,8 +330,8 @@ def run_genetic_optimization(
         "n1_max": log_df["max"].apply(lambda x: x[0]),
         "delta_max": log_df["max"].apply(lambda x: x[1]),
     })
-    log_export.to_csv(results_genetic_dir / f"genetic_results_log_{base_name}_{timestamp}.csv", index=False)
-    log_export.to_csv(results_genetic_dir / "convergence_log.csv", index=False)
+    log_export.to_csv(optimization_results_dir / f"convergence_log_{base_name}_{timestamp}.csv", index=False)
+    log_export.to_csv(optimization_results_dir / "convergence_log.csv", index=False)
 
-    print(f"[OK] Optymalizacja zakonczona: {len(pareto_df)} osobnikow w 1. froncie Pareto.")
+    print(f"[OK] Multi-objective optimization complete: {len(pareto_df)} non-dominated Pareto configurations found.")
     return pop_df, hof_df, pareto_df, log_df

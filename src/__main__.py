@@ -4,12 +4,12 @@ Unified Command-Line Interface (CLI) for MsCO2limit:
 
 Usage:
     python -m src --help
+    python -m src --demo --all-figures
+    python -m src --demo --all
     python -m src --figure 2
-    python -m src --all-figures
     python -m src --cv
     python -m src --train
     python -m src --optimize
-    python -m src --all
 """
 
 import argparse
@@ -61,6 +61,11 @@ def main():
     )
 
     parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Run framework in demonstration mode using synthetic benchmark dataset (ideal for conference replication).",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
@@ -75,12 +80,12 @@ def main():
 
     args = parser.parse_args()
 
-    # If no arguments provided, print help
+    # If no action arguments provided, print help
     if not (args.figure or args.all_figures or args.cv or args.train or args.optimize or args.all):
         parser.print_help()
         sys.exit(0)
 
-    from config.path import figures_dir, processed_data_dir
+    from config.path import figures_dir
     import src.visualization.figures as fig_module
 
     out_dir = Path(args.output_dir) if args.output_dir else figures_dir
@@ -89,17 +94,17 @@ def main():
     if args.cv or args.all:
         from src.pipeline import run_cv_pipeline
         print("\n>>> Executing 5-Fold Cross-Validation Pipeline...")
-        run_cv_pipeline()
+        run_cv_pipeline(use_demo=args.demo)
 
     if args.train or args.all:
         from src.pipeline import run_training_pipeline
-        print("\n>>> Training Final Production Surrogate Model...")
-        run_training_pipeline()
+        print("\n>>> Training Production Surrogate Model...")
+        run_training_pipeline(use_demo=args.demo)
 
     if args.optimize or args.all:
-        from src.genetic import run_genetic_optimization
+        from src.pipeline import run_optimization_pipeline
         print("\n>>> Running NSGA-II Multi-Objective Genetic Optimization...")
-        run_genetic_optimization()
+        run_optimization_pipeline(use_demo=args.demo)
 
     if args.figure == 2 or (args.all and not args.figure):
         fig_module.generate_figure_2(output_dir=out_dir, formats=formats)

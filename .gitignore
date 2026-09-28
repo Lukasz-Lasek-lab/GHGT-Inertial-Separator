@@ -31,13 +31,19 @@ legacy/
 scratch/
 .agents/
 
-# Data (strictly excluded)
-data/
-*.csv
+# Data (strictly excluded proprietary CFD files)
+data/raw/
+data/processed/
 *.xlsx
 *.xls
 *.parquet
 *.h5
+*.csv
+
+# Whitelist public demonstration datasets
+!data/demo/
+!data/demo/*.csv
+
 
 # Models (strictly excluded)
 models/
@@ -57,6 +63,11 @@ figures/
 *.jpg
 *.jpeg
 
+# Whitelist assets (e.g. conference poster QR codes)
+!assets/
+!assets/**
+
 # Logs
 *.log
 logs/
+

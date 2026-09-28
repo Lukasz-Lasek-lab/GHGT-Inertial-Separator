@@ -1,13 +1,11 @@
 """
-Moduł automatycznej inżynierii i selekcji cech (Feature Selection) dla projektu MsCO2limit.
-Implementuje metodologię doboru cech zgodną z notebookami:
-- notebooks/Wstępne_prace_dane Test 5.ipynb
-- notebooks/Wybór cech dla modelu Test 5.ipynb
+Automated Feature Engineering and Selection module for the MsCO2limit project.
+Employs an ensemble committee of estimators (Random Forest, f-regression, LassoCV)
+to evaluate candidate polynomial, trigonometric, logarithmic, and interaction terms
+against multi-objective targets (particle loss N1 and net collection advantage Delta).
 
-Generuje pełną pulę cech geometrycznych dla nowego zbioru danych (Dane_T5.xlsx),
-ocenia ich ważność komitetem modeli dla N1 i Delta, a następnie zapisuje:
-- listę wyselekcjonowanych cech do config/selected_features.json
-- znormalizowany zbiór z wyliczonymi cechami do data/processed/df_selected.csv
+Selected features are persisted to config/selected_features.json, and the engineered
+dataset is stored in data/processed/df_selected.csv.
 """
 
 import json
@@ -21,30 +19,45 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import SelectKBest, VarianceThreshold, f_regression
 from sklearn.linear_model import LassoCV
 
-from config.path import config_dir, processed_data_dir, raw_data_dir
+from config.path import config_dir, processed_data_dir, raw_data_dir, demo_data_file
 
-# 4 podstawowe nastawy geometrii (zawsze zachowywane)
+# 4 baseline geometric design parameters (always preserved)
 BASE_FEATURES: List[str] = ["Alfa", "Beta", "H1", "H2"]
 TOTAL_PARTICLES: int = 6417
 
 
-def load_raw_dataset(excel_path: Optional[Path] = None) -> pd.DataFrame:
+def load_raw_dataset(dataset_path: Optional[Path] = None) -> pd.DataFrame:
     """
-    Wczytuje surowy arkusz Excel (np. Dane_T5.xlsx) i normalizuje nazwy kolumn.
+    Loads raw experimental or CFD simulation dataset (Excel or CSV) and normalizes column headers.
     """
-    if excel_path is None:
-        excel_path = raw_data_dir / "Dane_T5.xlsx"
+    if dataset_path is None:
+        default_excel = raw_data_dir / "inertial_separator_cfd.xlsx"
+        legacy_excel = raw_data_dir / "Dane_T5.xlsx"
+        if default_excel.exists():
+            dataset_path = default_excel
+        elif legacy_excel.exists():
+            dataset_path = legacy_excel
+        elif demo_data_file.exists():
+            dataset_path = demo_data_file
+        else:
+            raise FileNotFoundError(
+                f"Raw dataset not found at '{default_excel}'. Please refer to the Data Availability "
+                "Statement in README.md or run with '--demo' for synthetic demonstration."
+            )
 
-    if not excel_path.exists():
-        raise FileNotFoundError(f"Nie znaleziono pliku surowego: {excel_path}")
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Raw dataset file not found: {dataset_path}")
 
-    df_raw = pd.read_excel(excel_path)
+    if dataset_path.suffix in [".xlsx", ".xls"]:
+        df_raw = pd.read_excel(dataset_path)
+    else:
+        df_raw = pd.read_csv(dataset_path)
 
-    # Mapowanie kolumn bez względu na formatowanie stopni i znaków specjalnych
+    # Normalize column names regardless of case and degree symbols
     col_map = {}
     for col in df_raw.columns:
         col_lower = str(col).lower()
-        if "alfa" in col_lower:
+        if "alfa" in col_lower or "alpha" in col_lower:
             col_map[col] = "Alfa"
         elif "beta" in col_lower:
             col_map[col] = "Beta"
@@ -52,23 +65,23 @@ def load_raw_dataset(excel_path: Optional[Path] = None) -> pd.DataFrame:
             col_map[col] = "H1"
         elif "h2" in col_lower:
             col_map[col] = "H2"
-        elif "n1" in col_lower:
+        elif "n1" in col_lower or "loss" in col_lower:
             col_map[col] = "N1"
-        elif "n2" in col_lower:
+        elif "n2" in col_lower or "capture" in col_lower:
             col_map[col] = "N2"
-        elif "n3" in col_lower or "kulek" in col_lower:
+        elif "n3" in col_lower or "uncollected" in col_lower or "particle" in col_lower:
             col_map[col] = "N3"
 
     df = df_raw.rename(columns=col_map)
     required = ["Alfa", "Beta", "H1", "H2", "N1", "N2"]
     missing = [c for c in required if c not in df.columns]
     if missing:
-        raise ValueError(f"W pliku {excel_path} brakuje wymaganych kolumn: {missing}")
+        raise ValueError(f"File {dataset_path} is missing required columns: {missing}")
 
     if "N3" not in df.columns:
         df["N3"] = TOTAL_PARTICLES - df["N1"] - df["N2"]
 
-    # Obliczenie targetu Delta = N2 - N1
+    # Calculate net separation advantage Delta = N2 - N1
     df["Delta"] = df["N2"] - df["N1"]
 
     return df
@@ -76,13 +89,12 @@ def load_raw_dataset(excel_path: Optional[Path] = None) -> pd.DataFrame:
 
 def generate_candidate_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Tworzy pełną pulę geometrycznych cech kandydujących na podstawie cech bazowych
-    zgodnie z funkcją create_geometric_features z notebooka wstępnego:
-    - Iloczyny i ilorazy
-    - Sumy i różnice bezwzględne
-    - Logarytmy
-    - Funkcje trygonometryczne (sin, cos w radianach)
-    - Potęgi 2. i 3. stopnia
+    Expands base geometric inputs into a rich aerodynamic candidate feature space:
+    - Products and ratios
+    - Sums and absolute differences
+    - Natural logarithms
+    - Trigonometric functions (sin, cos in radians)
+    - Second- and third-degree polynomial terms
     """
     df_feat = pd.DataFrame(index=df.index)
 
@@ -91,13 +103,13 @@ def generate_candidate_features(df: pd.DataFrame) -> pd.DataFrame:
     h1 = df["H1"].astype(float)
     h2 = df["H2"].astype(float)
 
-    # Cechy bazowe
+    # Base design parameters
     df_feat["Alfa"] = alfa
     df_feat["Beta"] = beta
     df_feat["H1"] = h1
     df_feat["H2"] = h2
 
-    # Iloczyny i ilorazy
+    # Products and ratios
     df_feat["Alfa_Beta"] = alfa * beta
     df_feat["H1_H2"] = h1 * h2
     df_feat["Alfa_div_Beta"] = alfa / (beta + 1e-6)
@@ -105,19 +117,19 @@ def generate_candidate_features(df: pd.DataFrame) -> pd.DataFrame:
     df_feat["log_H1"] = np.log(h1 + 1e-6)
     df_feat["log_H2"] = np.log(h2 + 1e-6)
 
-    # Sumy i różnice bezwzględne
+    # Sums and differences
     df_feat["Alfa_plus_Beta"] = alfa + beta
     df_feat["Alfa_minus_Beta"] = np.abs(alfa - beta)
     df_feat["H1_plus_H2"] = h1 + h2
     df_feat["H1_minus_H2"] = np.abs(h1 - h2)
 
-    # Funkcje trygonometryczne
+    # Trigonometric descriptors
     df_feat["sin_Alfa"] = np.sin(np.radians(alfa))
     df_feat["cos_Alfa"] = np.cos(np.radians(alfa))
     df_feat["sin_Beta"] = np.sin(np.radians(beta))
     df_feat["cos_Beta"] = np.cos(np.radians(beta))
 
-    # Potęgi 2. i 3. stopnia
+    # Polynomial powers
     for col_name, s in [("Alfa", alfa), ("Beta", beta), ("H1", h1), ("H2", h2)]:
         df_feat[f"{col_name}_squared"] = s ** 2
         df_feat[f"{col_name}_cubed"] = s ** 3
@@ -133,34 +145,32 @@ def select_best_features(
     random_state: int = 42,
 ) -> List[str]:
     """
-    Dokonuje wielokryterialnej selekcji cech:
-    1. Filtr wariancji (VarianceThreshold)
-    2. Random Forest Feature Importance dla N1 i Delta
-    3. SelectKBest (f_regression) dla N1 i Delta
-    4. LassoCV dla N1 i Delta
-    5. Agregacja punktacji i wybór top-K cech inżynieryjnych + 4 cechy bazowe.
+    Performs multi-objective feature selection:
+    1. Variance filtering (VarianceThreshold)
+    2. Random Forest Regressor Permutation Importance for N1 and Delta
+    3. Univariate feature scoring (f_regression / SelectKBest)
+    4. L1 Regularization (LassoCV)
+    5. Rank aggregation and collinearity pruning (r > 0.985).
     """
     candidate_cols = [c for c in X_cand.columns if c not in BASE_FEATURES]
 
-    # 1. Filtr wariancji
+    # 1. Variance threshold filter
     vt = VarianceThreshold(threshold=1e-5)
     vt.fit(X_cand[candidate_cols])
     valid_candidates = [c for c, sup in zip(candidate_cols, vt.get_support()) if sup]
 
     X_sub = X_cand[valid_candidates]
 
-    # Scoring słownik
+    # Feature scoring dictionary
     feature_scores: Dict[str, float] = {c: 0.0 for c in valid_candidates}
 
     for target_name, y in [("N1", y_n1), ("Delta", y_delta)]:
-        # Standardyzacja y do ważenia scoringów
         y_std = (y - y.mean()) / (y.std() + 1e-6)
 
         # 2. Random Forest Regressor
         rf = RandomForestRegressor(n_estimators=250, random_state=random_state, n_jobs=-1)
         rf.fit(X_sub, y_std)
         importances = rf.feature_importances_
-        # Normalizacja wag do sumy 1
         imp_norm = importances / (importances.sum() + 1e-9)
         for c, score in zip(valid_candidates, imp_norm):
             feature_scores[c] += float(score) * 2.0
@@ -183,21 +193,20 @@ def select_best_features(
         except Exception:
             pass
 
-    # Sortowanie cech wg zagregowanego wyniku
+    # Sort features by aggregated ensemble score
     sorted_features = sorted(feature_scores.items(), key=lambda x: x[1], reverse=True)
 
-    print("\n--- Ranking wygenerowanych cech inżynieryjnych (Top 15) ---")
+    print("\n--- Candidate Engineered Features Ranking (Top 15) ---")
     for rank, (feat, score) in enumerate(sorted_features[:15], 1):
         print(f" {rank:2d}. {feat:<20} score: {score:.4f}")
 
-    # Wybór cech bez nadmiarowych par o korelacji > 0.985
+    # Select top features avoiding pairwise collinearity > 0.985
     selected_engineered: List[str] = []
     corr_matrix = X_cand[valid_candidates].corr().abs()
 
     for feat, _ in sorted_features:
         if len(selected_engineered) >= max_engineered_features:
             break
-        # Sprawdź korelację z już wybranymi cechami
         too_correlated = False
         for chosen in selected_engineered:
             if corr_matrix.loc[feat, chosen] > 0.985:
@@ -206,7 +215,7 @@ def select_best_features(
         if not too_correlated:
             selected_engineered.append(feat)
 
-    # Łączna lista: 4 cechy bazowe + wyselekcjonowane cechy inżynieryjne
+    # Total feature set: 4 base design parameters + top non-redundant engineered features
     final_features = BASE_FEATURES + selected_engineered
     return final_features
 
@@ -218,29 +227,37 @@ def run_feature_selection(
     max_engineered: int = 7,
 ) -> Tuple[List[str], pd.DataFrame]:
     """
-    Główna funkcja wykonawcza:
-    1. Wczytuje dane surowe Dane_T5.xlsx
-    2. Generuje kandydatów
-    3. Przeprowadza selekcję cech
-    4. Zapisuje selected_features.json
-    5. Zapisuje gotowy zbiór df_selected.csv z cechami i targetami.
+    Main feature selection execution workflow:
+    1. Loads dataset
+    2. Generates candidate aerodynamic features
+    3. Executes multi-objective ensemble selection
+    4. Exports selected_features.json
+    5. Saves transformed training dataset to df_selected.csv
     """
     if raw_path is None:
-        raw_path = raw_data_dir / "Dane_T5.xlsx"
+        default_raw = raw_data_dir / "inertial_separator_cfd.xlsx"
+        legacy_raw = raw_data_dir / "Dane_T5.xlsx"
+        if default_raw.exists():
+            raw_path = default_raw
+        elif legacy_raw.exists():
+            raw_path = legacy_raw
+        else:
+            raw_path = demo_data_file
+
     if output_csv_path is None:
         output_csv_path = processed_data_dir / "df_selected.csv"
     if json_path is None:
         json_path = config_dir / "selected_features.json"
 
-    print(f"[INFO] Wczytywanie surowych danych z: {raw_path}")
+    print(f"[INFO] Loading dataset from: {raw_path}")
     df_raw = load_raw_dataset(raw_path)
 
-    print(f"[INFO] Liczba wierszy: {len(df_raw)}, suma czastek N1+N2+N3: {(df_raw['N1']+df_raw['N2']+df_raw['N3']).unique()}")
-    print("[INFO] Generowanie puli cech geometrycznych...")
+    print(f"[INFO] Samples: {len(df_raw)}, Particle balance (N1+N2+N3): {(df_raw['N1']+df_raw['N2']+df_raw['N3']).unique()}")
+    print("[INFO] Generating candidate geometric and aerodynamic features...")
     X_cand = generate_candidate_features(df_raw)
-    print(f"[INFO] Wygenerowano {len(X_cand.columns)} cech kandydujacych.")
+    print(f"[INFO] Generated {len(X_cand.columns)} candidate features.")
 
-    print("[INFO] Selekcja cech za pomoca komitetu (RF, f_regression, Lasso)...")
+    print("[INFO] Performing ensemble feature selection (Random Forest, f-regression, Lasso)...")
     selected_features = select_best_features(
         X_cand,
         y_n1=df_raw["N1"],
@@ -248,9 +265,9 @@ def run_feature_selection(
         max_engineered_features=max_engineered,
     )
 
-    print(f"\n[OK] Wybrane cechy ({len(selected_features)}): {selected_features}")
+    print(f"\n[OK] Selected feature set ({len(selected_features)}): {selected_features}")
 
-    # Zapis do JSON
+    # Save metadata JSON
     json_path.parent.mkdir(parents=True, exist_ok=True)
     features_meta = {
         "dataset_source": str(raw_path.name),
@@ -262,9 +279,9 @@ def run_feature_selection(
     }
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(features_meta, f, indent=4)
-    print(f"[SAVE] Lista cech zapisana do: {json_path}")
+    print(f"[SAVE] Selected feature metadata saved to: {json_path}")
 
-    # Przygotowanie pełnego DataFrame do trenowania modelu
+    # Prepare DataFrame for surrogate modeling
     df_out = X_cand[selected_features].copy()
     df_out["N1"] = df_raw["N1"]
     df_out["N2"] = df_raw["N2"]
@@ -275,7 +292,7 @@ def run_feature_selection(
 
     output_csv_path.parent.mkdir(parents=True, exist_ok=True)
     df_out.to_csv(output_csv_path, index=False)
-    print(f"[SAVE] Znormalizowany zbior zapisany do: {output_csv_path} (wymiar: {df_out.shape})")
+    print(f"[SAVE] Processed dataset saved to: {output_csv_path} (shape: {df_out.shape})")
 
     return selected_features, df_out
 

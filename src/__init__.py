@@ -1,5 +1,5 @@
 """
-MsCO2limit - Pakiet modelowania ML i optymalizacji wielokryterialnej separatora cząstek.
+MsCO2limit - Surrogate Modeling and Multi-Objective Optimization Framework for Inertial Particle Separators.
 """
 
 from src.features import BASE_FEATURES, FEATURE_NAMES, TARGET_NAMES, create_features

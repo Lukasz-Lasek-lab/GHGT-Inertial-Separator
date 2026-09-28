@@ -1,6 +1,6 @@
 """
-Moduł wizualizacji publikacyjnej (Scientific Visualization) dla projektu MsCO2limit.
-Zawiera narzędzia do generowania figur o standardzie czasopism Q1 (Elsevier / Springer / ACS).
+Scientific Visualization module for the MsCO2limit project.
+Provides publication-standard figure generators aligned with Q1 journal guidelines (Elsevier / Springer / ACS).
 """
 
 from src.visualization.publication_plots import (

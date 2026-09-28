@@ -1,7 +1,7 @@
 """
-Moduł inżynierii cech (Feature Engineering) dla separatora cząstek MsCO2limit.
-Dynamicznie wspiera zestaw cech wyselekcjonowany w config/selected_features.json
-oraz udostępnia funkcje obliczania wektora cech dla modeli ML, NSGA-II i analizy wrażliwości.
+Feature Engineering module for MsCO2limit inertial particle separator.
+Dynamically supports the engineered feature set configured in config/selected_features.json
+and provides vector computation routines for ML surrogates, NSGA-II optimization, and sensitivity analysis.
 """
 
 import json
@@ -12,15 +12,15 @@ import pandas as pd
 
 from config.path import config_dir
 
-# 4 cechy bazowe (nastawy geometrii)
+# 4 baseline geometric design parameters
 BASE_FEATURES: List[str] = ["Alfa", "Beta", "H1", "H2"]
 TARGET_NAMES: List[str] = ["N1", "Delta"]
 
 
 def load_selected_feature_names(json_path: Optional[Path] = None) -> Tuple[List[str], List[str]]:
     """
-    Wczytuje listę wybranych cech z config/selected_features.json.
-    W razie braku pliku stosuje bezpieczny zestaw domyślny dla Dane_T5.xlsx.
+    Loads selected feature names from config/selected_features.json.
+    Falls back to a verified domain-specific default feature set if the configuration file is missing.
     """
     if json_path is None:
         json_path = config_dir / "selected_features.json"
@@ -34,9 +34,9 @@ def load_selected_feature_names(json_path: Optional[Path] = None) -> Tuple[List[
                 if all_feats:
                     return all_feats, eng_feats
         except Exception as e:
-            print(f"[WARN] Nie udało się wczytać {json_path}: {e}. Użycie cech domyślnych.")
+            print(f"[WARN] Failed to load {json_path}: {e}. Utilizing default aerodynamic features.")
 
-    # Zestaw domyślny zoptymalizowany dla Dane_T5.xlsx
+    # Default verified feature set for inertial separator geometry
     default_eng = [
         "Beta_cubed",
         "Alfa_cubed",
@@ -49,13 +49,13 @@ def load_selected_feature_names(json_path: Optional[Path] = None) -> Tuple[List[
     return BASE_FEATURES + default_eng, default_eng
 
 
-# Inicjalizacja globalnych list cech
+# Initialize global feature name lists
 FEATURE_NAMES, ENGINEERED_FEATURES = load_selected_feature_names()
 
 
 def reload_features(json_path: Optional[Path] = None) -> List[str]:
     """
-    Przeładowuje listę cech (np. po ponownym uruchomieniu feature_selection).
+    Reloads the active feature list (e.g. after running feature selection).
     """
     global FEATURE_NAMES, ENGINEERED_FEATURES
     FEATURE_NAMES, ENGINEERED_FEATURES = load_selected_feature_names(json_path)
@@ -70,7 +70,7 @@ def compute_single_feature(
     h2: Union[float, np.ndarray, pd.Series],
 ) -> Union[float, np.ndarray, pd.Series]:
     """
-    Biblioteka formuł geometrycznych: oblicza pojedynczą cechę inżynieryjną na podstawie jej nazwy.
+    Geometric formula registry: computes a single engineered feature from input dimensions.
     """
     eps = 1e-6
     if feat_name == "Alfa":
@@ -82,7 +82,7 @@ def compute_single_feature(
     elif feat_name == "H2":
         return h2
 
-    # Iloczyny i ilorazy
+    # Products and quotients
     elif feat_name == "Alfa_Beta":
         return alfa * beta
     elif feat_name == "H1_H2":
@@ -96,7 +96,7 @@ def compute_single_feature(
     elif feat_name == "log_H2":
         return np.log(h2 + eps)
 
-    # Sumy i różnice bezwzględne
+    # Sums and absolute differences
     elif feat_name == "Alfa_plus_Beta":
         return alfa + beta
     elif feat_name == "Alfa_minus_Beta":
@@ -106,7 +106,7 @@ def compute_single_feature(
     elif feat_name == "H1_minus_H2":
         return np.abs(h1 - h2)
 
-    # Trygonometria
+    # Trigonometric functions (angles in degrees converted to radians)
     elif feat_name == "sin_Alfa":
         return np.sin(np.radians(alfa))
     elif feat_name == "cos_Alfa":
@@ -116,7 +116,7 @@ def compute_single_feature(
     elif feat_name == "cos_Beta":
         return np.cos(np.radians(beta))
 
-    # Potęgi 2 i 3 stopnia
+    # Second- and third-order powers
     elif feat_name == "Alfa_squared":
         return alfa ** 2
     elif feat_name == "Alfa_cubed":
@@ -135,7 +135,7 @@ def compute_single_feature(
         return h2 ** 3
 
     else:
-        raise ValueError(f"Nieznana cecha geometryczna: {feat_name}")
+        raise ValueError(f"Unknown geometric feature: {feat_name}")
 
 
 def create_features(
@@ -143,12 +143,12 @@ def create_features(
     feature_names: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
-    Tworzy pełny zestaw wybranych cech dla zadanego DataFrame na podstawie 'Alfa', 'Beta', 'H1', 'H2'.
-    Zwraca DataFrame z kolumnami ułożonymi ściśle wg kolejności oczekiwanej przez model.
+    Computes full set of engineered features for input DataFrame from base parameters 'Alfa', 'Beta', 'H1', 'H2'.
+    Returns DataFrame with column order strictly matching the trained surrogate expectations.
     """
     missing = [col for col in BASE_FEATURES if col not in df.columns]
     if missing:
-        raise ValueError(f"Brakujące kolumny bazowe w DataFrame: {missing}")
+        raise ValueError(f"Missing base geometric parameter columns in DataFrame: {missing}")
 
     if feature_names is None:
         feature_names = FEATURE_NAMES
@@ -173,7 +173,7 @@ def create_feature_dict(
     feature_names: Optional[List[str]] = None,
 ) -> Dict[str, float]:
     """
-    Szybkie obliczanie słownika cech dla pojedynczego zestawu parametrów (np. w pętli optymalizatora).
+    Fast computation of feature dictionary for a single design point (e.g. in optimization loop).
     """
     if feature_names is None:
         feature_names = FEATURE_NAMES
@@ -194,7 +194,7 @@ def create_feature_array(
     feature_names: Optional[List[str]] = None,
 ) -> np.ndarray:
     """
-    Zwraca wektor numpy (N_features,) z wartościami cech w kolejności feature_names.
+    Returns 1D numpy vector (N_features,) with feature values in the order of feature_names.
     """
     if feature_names is None:
         feature_names = FEATURE_NAMES
@@ -205,10 +205,10 @@ def create_feature_array(
 
 def prepare_targets(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Przygotowuje zmienne docelowe: N1 oraz Delta = N2 - N1.
+    Prepares regression targets: N1 (particle loss) and Delta = N2 - N1 (net collection advantage).
     """
     if "N1" not in df.columns or "N2" not in df.columns:
-        raise ValueError("DataFrame musi zawierać kolumny 'N1' oraz 'N2'")
+        raise ValueError("DataFrame must contain 'N1' and 'N2' columns.")
 
     y = pd.DataFrame(index=df.index)
     y["N1"] = df["N1"].values
@@ -217,3 +217,4 @@ def prepare_targets(df: pd.DataFrame) -> pd.DataFrame:
     else:
         y["Delta"] = (df["N2"] - df["N1"]).values
     return y
+

@@ -1,14 +1,14 @@
 """
-Moduł generowania figur naukowych o jakości publikacyjnej (Q1 Journal Standard).
-Dedykowany dla artykułów z inżynierii chemicznej, energetyki i uczenia maszynowego.
+Scientific Visualization module for publication-quality figures (Q1 Journal Standard).
+Tailored for chemical engineering, carbon capture, and machine learning research.
 
-Główne cechy:
-- Centralna konfiguracja stylów bezszeryfowych (DejaVu Sans / Arial / Helvetica)
-- Ścisły zakaz tytułów nad wykresami (plt.title) na rzecz etykiet paneli (a), (b)...
-- Pełna dostępność dla osób z zaburzeniami rozpoznawania barw (CVD / Okabe-Ito, viridis, cividis)
-- Różnicowanie linii (style) i punktów (markery) dla pełnej czytelności w skali szarości
-- Wieloformatowy eksport: domyślnie wektorowe (.pdf, .svg) + raster wysokiej rozdzielczości (.png, 300+ DPI)
-- Automatyczne tworzenie i zapis w katalogu figures/
+Key features:
+- Centralized sans-serif typography configuration (DejaVu Sans / Arial / Helvetica)
+- Strict adherence to publication standards (no plt.title headers; subpanel labels (a), (b)...)
+- Color Vision Deficiency (CVD) accessible palettes (Okabe-Ito, viridis, cividis)
+- Dual coding with distinct line styles and markers for grayscale print accessibility
+- Multi-format vector (.pdf, .svg) and high-resolution raster (.png, 300+ DPI) export
+- Automated output directory resolution into figures/
 """
 
 from contextlib import contextmanager
@@ -25,19 +25,19 @@ import pandas as pd
 from config.path import figures_dir
 
 # ==============================================================================
-# 1. PALETY BARW I SYMBOLE CVD (Color Vision Deficiency Friendly & Grayscale)
+# 1. COLOR PALETTES AND CVD SYMBOLS (Color Vision Deficiency Friendly & Grayscale)
 # ==============================================================================
 
-# Uniwersalna paleta Okabe-Ito (Wong, 2011, Nature Methods)
+# Universal Okabe-Ito colorblind-safe palette (Wong, 2011, Nature Methods)
 OKABE_ITO: List[str] = [
-    "#0072B2",  # Niebieski (Blue)
-    "#D55E00",  # Cynobrowy / Pomarańczowo-czerwony (Vermillion)
-    "#009E73",  # Morski / Niebieskawo-zielony (Bluish green)
-    "#E69F00",  # Pomarańczowy (Orange)
-    "#56B4E9",  # Błękitny (Sky blue)
-    "#CC79A7",  # Czerwonawy fiolet (Reddish purple)
-    "#F0E442",  # Żółty (Yellow)
-    "#000000",  # Czarny (Black)
+    "#0072B2",  # Blue
+    "#D55E00",  # Vermillion / Red-Orange
+    "#009E73",  # Bluish Green
+    "#E69F00",  # Orange
+    "#56B4E9",  # Sky Blue
+    "#CC79A7",  # Reddish Purple
+    "#F0E442",  # Yellow
+    "#000000",  # Black
 ]
 
 CVD_PALETTES: Dict[str, List[str]] = {
@@ -47,11 +47,11 @@ CVD_PALETTES: Dict[str, List[str]] = {
     "four_tone": ["#0072B2", "#D55E00", "#009E73", "#E69F00"],
 }
 
-# Style linii i markery do odróżniania serii w czerni i bieli (B&W print friendly)
+# Line styles and markers for black-and-white print clarity
 LINE_STYLES: List[str] = ["-", "--", "-.", ":"]
 MARKERS: List[str] = ["o", "s", "^", "D", "v", "P", "X", "<", ">"]
 
-# Mapowanie nazw cech na symbole matematyczne w standardzie LaTeX i jednostki
+# Mapping feature names to LaTeX mathematical expressions and units
 FEATURE_LABEL_MAP: Dict[str, str] = {
     "Alfa": r"$\alpha$ [deg]",
     "Beta": r"$\beta$ [deg]",
@@ -80,7 +80,7 @@ FEATURE_LABEL_MAP: Dict[str, str] = {
     "H2_cubed": r"$H_2^3$ [$\mathrm{m}^3$]",
 }
 
-# Mapowanie parametrów konstrukcyjnych na pełne podpisy osi (Q1 Journal Standard)
+# Mapping design parameters to complete axis descriptions (Q1 Journal Standard)
 PARAM_AXIS_LABEL_MAP: Dict[str, str] = {
     "Alfa": r"Baffle angle $\alpha$ [deg]",
     "Beta": r"Deflector angle $\beta$ [deg]",
@@ -88,7 +88,7 @@ PARAM_AXIS_LABEL_MAP: Dict[str, str] = {
     "H2": r"Baffle height $H_2$ [m]",
 }
 
-# Mapowanie parametrów na oznaczenia punktu referencyjnego w legendzie
+# Mapping parameters to reference point labels in legends
 PARAM_NOMINAL_LABEL_MAP: Dict[str, str] = {
     "Alfa": r"Nominal $\alpha = 60^\circ$",
     "Beta": r"Nominal $\beta = 60^\circ$",
@@ -98,23 +98,23 @@ PARAM_NOMINAL_LABEL_MAP: Dict[str, str] = {
 
 
 # ==============================================================================
-# 2. CENTRALNA KONFIGURACJA STYLÓW PUBLIKACYJNYCH
+# 2. CENTRAL PUBLICATION STYLING CONFIGURATION
 # ==============================================================================
 
 PUBLICATION_RC_PARAMS: Dict[str, Any] = {
-    # Typografia: wyłącznie czcionki bezszeryfowe
+    # Typography: exclusively clean sans-serif
     "font.family": "sans-serif",
     "font.sans-serif": ["DejaVu Sans", "Helvetica", "Arial", "Liberation Sans"],
     "mathtext.fontset": "dejavusans",
     "font.size": 9.0,
-    # Etykiety osi i podziałki
+    # Axis labels and ticks
     "axes.labelsize": 9.5,
     "axes.titlesize": 9.5,
     "xtick.labelsize": 8.0,
     "ytick.labelsize": 8.0,
     "legend.fontsize": 8.0,
     "legend.title_fontsize": 8.5,
-    # Grubość linii i obramowanie
+    # Line width and spines
     "axes.linewidth": 0.8,
     "axes.edgecolor": "#262626",
     "axes.labelcolor": "#1A1A1A",
@@ -123,13 +123,13 @@ PUBLICATION_RC_PARAMS: Dict[str, Any] = {
     "lines.linewidth": 1.4,
     "lines.markersize": 5.5,
     "patch.linewidth": 0.8,
-    # Siatka pomocnicza: subtelna, nie dominująca wykresu
+    # Subtle background grid
     "axes.grid": True,
     "grid.alpha": 0.45,
     "grid.color": "#D0D0D0",
     "grid.linestyle": ":",
     "grid.linewidth": 0.6,
-    # Znaczniki na osiach (Ticks): skierowane do wewnątrz (standard inżynierski)
+    # Inward ticks (engineering standard)
     "xtick.direction": "in",
     "ytick.direction": "in",
     "xtick.major.size": 4.0,
@@ -142,13 +142,13 @@ PUBLICATION_RC_PARAMS: Dict[str, Any] = {
     "ytick.minor.width": 0.5,
     "xtick.top": True,
     "ytick.right": True,
-    # Legenda: dyskretna, bez twardej czarnej ramki
+    # Legend styling
     "legend.frameon": True,
     "legend.framealpha": 0.92,
     "legend.edgecolor": "#CCCCCC",
     "legend.fancybox": False,
     "legend.borderpad": 0.4,
-    # Zapis
+    # Rendering and export
     "figure.dpi": 300,
     "savefig.dpi": 300,
     "savefig.bbox": "tight",
@@ -157,13 +157,13 @@ PUBLICATION_RC_PARAMS: Dict[str, Any] = {
 
 
 def set_publication_style() -> None:
-    """Aktywuje globalny styl publikacyjny w matplotlib.rcParams."""
+    """Activates global publication styling in matplotlib.rcParams."""
     mpl.rcParams.update(PUBLICATION_RC_PARAMS)
 
 
 @contextmanager
 def publication_style():
-    """Context manager tymczasowo aplikujący parametry publikacyjne."""
+    """Context manager temporarily applying publication rcParams."""
     original_params = mpl.rcParams.copy()
     mpl.rcParams.update(PUBLICATION_RC_PARAMS)
     try:
@@ -173,7 +173,7 @@ def publication_style():
 
 
 # ==============================================================================
-# 3. ZAPIS I ETYKIETOWANIE PODPISÓW (NO TITLES, PANEL LABELS)
+# 3. EXPORT AND SUBPANEL LABELING (NO TITLES, PANEL LABELS)
 # ==============================================================================
 
 def add_panel_label(
@@ -187,8 +187,8 @@ def add_panel_label(
     bbox: bool = True,
 ) -> None:
     """
-    Dodaje zunifikowane oznaczenie subfigury (np. '(a)', '(b)') wewnątrz panelu.
-    Zastępuje niedozwolony w publikacjach tytuł nad wykresem (plt.title).
+    Adds unified subfigure indicator (e.g. '(a)', '(b)') inside a panel.
+    Replaces non-standard titles (plt.title) with Q1 journal compliant panel labels.
     """
     bbox_props = (
         dict(boxstyle="square,pad=0.2", facecolor="white", edgecolor="none", alpha=0.85)
@@ -236,11 +236,11 @@ def save_publication_figure(
     close_fig: bool = True,
 ) -> Dict[str, Path]:
     """
-    Zapisuje figurę w formacie wektorowym (PDF, SVG) oraz rastrowym (PNG, min 300 DPI)
-    do dedykowanego katalogu figures/.
+    Saves figure in vector formats (PDF, SVG) and high-resolution raster (PNG, 300 DPI)
+    into the dedicated figures/ directory.
     
     Returns:
-        Słownik {format: Path} ze ścieżkami do zapisanych plików.
+        Dictionary mapping format strings to saved file Paths.
     """
     if output_dir is None:
         target_dir = figures_dir
@@ -271,7 +271,7 @@ def save_publication_figure(
 
 
 # ==============================================================================
-# 4. FUNKCJE GENERUJĄCE FIGURY ZGODNE Z PLANEM ARTYKUŁU
+# 4. PUBLICATION FIGURE GENERATION ROUTINES
 # ==============================================================================
 
 def plot_parity_single(
@@ -289,8 +289,8 @@ def plot_parity_single(
     figsize: Tuple[float, float] = (3.9, 3.8),
 ) -> Dict[str, Path]:
     """
-    Generuje pojedynczą, autonomiczną figurę korelacji (Parity Plot) dla wybranego targetu.
-    Idealna do układów 1-kolumnowych w artykułach oraz na plakaty konferencyjne.
+    Generates an autonomous parity correlation plot for a single target.
+    Optimized for single-column publication figures and conference posters.
     """
     from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
@@ -373,8 +373,8 @@ def plot_residuals_single(
     figsize: Tuple[float, float] = (4.2, 3.5),
 ) -> Dict[str, Path]:
     """
-    Generuje pojedynczą, autonomiczną figurę rozkładu reszt (Residuals Distribution).
-    Zawiera histogramy błędów dla celów predykcyjnych z linią zera.
+    Generates an autonomous residual error distribution figure.
+    Contains prediction error histograms for target variables with zero error reference line.
     """
     if targets is None:
         targets = [
@@ -426,12 +426,12 @@ def plot_model_diagnostics(
     individual_prefix: str = "Fig2",
 ) -> Dict[str, Any]:
     """
-    Generuje Fig 2: Diagnostyka i zdolność predykcyjna modelu surogatowego ML.
-    Domyślnie generuje ZARÓWNO połączoną siatkę 2x2, JAK I 4 osobne, samodzielne figury
-    (do łatwego umieszczania na plakatach i w różnych miejscach artykułu).
-    
+    Generates Figure 2: Model Diagnostics and Surrogate Predictive Performance.
+    By default generates BOTH a composite 2x2 grid AND standalone panel figures
+    (for direct inclusion in conference posters and modular manuscript sections).
+
     Returns:
-        Słownik ze ścieżkami do połączonej figury oraz osobnych figur.
+        Dictionary of file paths to composite and individual panel figures.
     """
     from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
@@ -445,7 +445,7 @@ def plot_model_diagnostics(
 
     saved_all: Dict[str, Any] = {}
 
-    # 1. Generowanie 4 osobnych, samodzielnych figur (idealnych na plakat i do modułowego układu)
+    # 1. Generate standalone panel figures (ideal for posters and modular layouts)
     if save_individual:
         single_configs = [
             (targets[0][0], "$N_1$", "Particle loss", targets[0][2], OKABE_ITO[0], MARKERS[0], "(a)", f"{individual_prefix}a_parity_N1"),
@@ -469,7 +469,7 @@ def plot_model_diagnostics(
             )
             saved_all[f_name] = res_single
 
-        # Osobna figura rozkładu reszt
+        # Standalone residual distribution figure
         res_dist = plot_residuals_single(
             y_true_df=y_true_df,
             y_pred_df=y_pred_df,
@@ -480,7 +480,7 @@ def plot_model_diagnostics(
         )
         saved_all[f"{individual_prefix}d_residuals_distribution"] = res_dist
 
-    # 2. Generowanie połączonej siatki 2x2 (do całościowego podglądu)
+    # 2. Generate composite 2x2 grid
     with publication_style():
         fig, axes = plt.subplots(2, 2, figsize=(7.6, 6.8))
         axes_flat = axes.flatten()
@@ -550,7 +550,7 @@ def plot_model_diagnostics(
             add_panel_label(ax, panel_labels[i], loc="top_left")
             ax.legend(loc="lower right", framealpha=0.88)
 
-        # Wykres rozkładu reszt (Residuals Histogram)
+        # Residual error histogram panel
         ax_res = axes_flat[3]
         res_n1 = y_true_df["N1"].values - y_pred_df["N1"].values
         res_n2 = y_true_df["N2"].values - y_pred_df["N2"].values
@@ -606,14 +606,14 @@ def plot_feature_importance_single(
     figsize: Tuple[float, float] = (4.0, 3.8),
 ) -> Dict[str, Path]:
     """
-    Generuje pojedynczą, autonomiczną figurę istotności cech dla wybranego targetu.
-    Poziomy wykres słupkowy z błędami permutacji, rozróżnieniem cech bazowych i inżynieryjnych
-    oraz oznaczeniami matematycznymi LaTeX na osi pionowej.
+    Generates an autonomous feature importance figure for a single target.
+    Horizontal bar chart with permutation variance, distinguishing base and engineered features
+    with LaTeX mathematical formatting on the vertical axis.
     """
     if base_features is None:
         base_features = ["Alfa", "Beta", "H1", "H2"]
 
-    # Filtruj cechy o zerowej lub pomijalnej istotności (< 0.1%)
+    # Filter features with negligible importance (< 0.1%)
     df_plot = importance_df[importance_df[importance_col] >= 0.1].copy()
     df_sorted = df_plot.sort_values(by=importance_col, ascending=True).copy()
 
@@ -651,7 +651,7 @@ def plot_feature_importance_single(
         for bar, hatch in zip(bars, hatches):
             bar.set_hatch(hatch)
 
-        # Adnotacje wartości procentowych przy słupkach
+        # Percentage annotations next to bars
         max_val = df_sorted[importance_col].max()
         for idx, (_, row) in enumerate(df_sorted.iterrows()):
             val = row[importance_col]
@@ -686,7 +686,7 @@ def plot_feature_importance_single(
         ax.xaxis.set_minor_locator(AutoMinorLocator())
         ax.set_xlim(0, max(max_val * 1.20, max_val + 10.0) if max_val < 55 else 100)
 
-        # Legenda rozróżniająca cechy bazowe i inżynieryjne
+        # Legend distinguishing base and engineered features
         custom_handles = [
             plt.Rectangle((0, 0), 1, 1, facecolor=OKABE_ITO[0], edgecolor="#222222", linewidth=0.6),
             plt.Rectangle((0, 0), 1, 1, facecolor=OKABE_ITO[1], edgecolor="#222222", linewidth=0.6, hatch="//"),
@@ -718,10 +718,10 @@ def plot_feature_importance_comparison(
     figsize: Tuple[float, float] = (4.4, 3.8),
 ) -> Dict[str, Path]:
     """
-    Generuje Fig 3d: Zbiorcze porównanie istotności cech między celami (N1 vs N2 vs Delta).
-    Zgrupowany poziomy wykres słupkowy ukazujący przesunięcie dominacji z H1 (straty) na Alfa (wychwyt).
+    Generates Figure 3d: Comparative feature importance across objectives (N1 vs. N2 vs. Delta).
+    Grouped horizontal bar chart demonstrating shift in dominance from H1 (losses) to Alfa (collection).
     """
-    # Ustal wspólną listę aktywnych cech uporządkowaną wg średniej istotności
+    # Determine common active feature list ordered by mean importance
     all_feats = set()
     for df in importance_dict.values():
         all_feats.update(df[df[importance_col] >= 0.1][feature_col].tolist())
@@ -799,17 +799,17 @@ def plot_feature_importance(
     individual_prefix: str = "Fig3",
 ) -> Dict[str, Any]:
     """
-    Generuje Fig 3: Istotność cech geometrycznych (Feature Importance / XAI).
-    Domyślnie generuje ZARÓWNO połączoną siatkę 2x2, JAK I 4 osobne, samodzielne figury
-    (N1, N2, Delta oraz zestawienie porównawcze celów).
-    
+    Generates Figure 3: Geometric Feature Importance (Explainable AI / Permutation Importance).
+    By default generates BOTH a composite 2x2 grid AND standalone panel figures
+    (N1, N2, Delta, and cross-target comparison).
+
     Returns:
-        Słownik ze ścieżkami do połączonej figury oraz osobnych figur.
+        Dictionary of file paths to composite and individual panel figures.
     """
     saved_all: Dict[str, Any] = {}
 
     if isinstance(importance_data, pd.DataFrame):
-        # Wsteczna kompatybilność, jeśli podano pojedynczy DataFrame
+        # Backward compatibility if a single DataFrame is passed
         importance_dict = {"N1": importance_data}
     else:
         importance_dict = importance_data
@@ -820,7 +820,7 @@ def plot_feature_importance(
         ("Delta", "$\\Delta$", "Net capture advantage", "(c)", f"{individual_prefix}c_importance_Delta"),
     ]
 
-    # 1. Generowanie osobnych, samodzielnych figur (idealnych na plakat i do modułowego układu)
+    # 1. Generate standalone panel figures (ideal for posters and modular layouts)
     if save_individual:
         for t_key, t_sym, t_name, p_lbl, f_name in target_configs:
             if t_key in importance_dict:
@@ -835,7 +835,7 @@ def plot_feature_importance(
                 )
                 saved_all[f_name] = res_single
 
-        # Osobna figura porównania (Fig 3d)
+        # Standalone comparison figure (Fig 3d)
         if len(importance_dict) >= 2:
             res_comp = plot_feature_importance_comparison(
                 importance_dict=importance_dict,
@@ -846,7 +846,7 @@ def plot_feature_importance(
             )
             saved_all[f"{individual_prefix}d_importance_comparison"] = res_comp
 
-    # 2. Generowanie połączonej siatki 2x2 (do całościowego podglądu)
+    # 2. Generate composite 2x2 grid
     with publication_style():
         fig, axes = plt.subplots(2, 2, figsize=(7.8, 7.0))
         axes_flat = axes.flatten()
@@ -933,7 +933,7 @@ def plot_feature_importance(
             )
             add_panel_label(ax, p_lbl, loc="outside_top_left")
 
-        # Panel (d): Porównanie celów
+        # Panel (d): Cross-target comparison
         ax_d = axes_flat[3]
         all_feats = set()
         for df in importance_dict.values():
@@ -1012,16 +1012,16 @@ def plot_sensitivity_sweep_single(
     figsize: Tuple[float, float] = (4.0, 3.5),
 ) -> Dict[str, Path]:
     """
-    Generuje pojedynczy, autonomiczny wykres 1D odpowiedzi układu (Dual-Y).
-    Lewa oś: N1 (straty), Prawa oś: N2 (wychwyt).
-    Zawiera pionową linię geometrii nominalnej CFD oraz oznaczenia LaTeX.
+    Generates an autonomous 1D dual-response profile (Dual-Y axis).
+    Left axis: N1 (particle loss), Right axis: N2 (carrier capture).
+    Includes CFD nominal reference line and LaTeX annotations.
     """
     with publication_style():
         fig, ax1 = plt.subplots(figsize=figsize)
         color_n1 = OKABE_ITO[0]
         color_n2 = OKABE_ITO[1]
 
-        # Lewa oś: N1 (straty)
+        # Left axis: N1 (loss)
         line1 = ax1.plot(
             df_param[param],
             df_param["N1_pred"],
@@ -1054,7 +1054,7 @@ def plot_sensitivity_sweep_single(
             )
             lines.append(line_ref)
 
-        # Prawa oś: N2 (wychwyt)
+        # Right axis: N2 (capture)
         ax2 = ax1.twinx()
         line2 = ax2.plot(
             df_param[param],
@@ -1070,14 +1070,14 @@ def plot_sensitivity_sweep_single(
         ax2.yaxis.set_minor_locator(AutoMinorLocator())
         ax2.grid(False)
 
-        # Margines osi poziomej dla czystego wyglądu linii referencyjnej
+        # Horizontal axis margin for clean reference line appearance
         span = df_param[param].max() - df_param[param].min()
         margin = 0.025 * span if span > 0 else 0.5
         ax1.set_xlim(df_param[param].min() - margin, df_param[param].max() + margin)
 
         lines.extend(line2)
         labels = [l.get_label() for l in lines]
-        # Precyzyjnie dobrane pozycje legendy wg wskazań recenzenta/użytkownika
+        # Adaptive legend placement for optimal readability
         legend_loc_map = {
             "Alfa": "center left",
             "Beta": "center left",
@@ -1107,8 +1107,8 @@ def plot_sensitivity_sweeps_1d(
     individual_prefix: str = "Fig4",
 ) -> Dict[str, Any]:
     """
-    Generuje Fig 4: Profile wrażliwości inżynieryjnej 1D wokół punktu roboczego.
-    Domyślnie generuje ZARÓWNO połączoną siatkę 2x2, JAK I 4 osobne figury
+    Generates Figure 4: 1D Engineering Sensitivity Sweeps around Reference Point.
+    By default generates BOTH a composite 2x2 grid AND standalone figures
     (Alfa, Beta, H1, H2) z dwiema osiami pionowymi (Dual-Y).
     """
     saved_all: Dict[str, Any] = {}
@@ -1135,7 +1135,7 @@ def plot_sensitivity_sweeps_1d(
             )
             saved_all[f_name] = res_single
 
-    # 2. Generowanie połączonej siatki 2x2
+    # 2. Generate composite 2x2 grid
     with publication_style():
         fig, axes = plt.subplots(2, 2, figsize=(7.4, 6.2))
         axes_flat = axes.flatten()
@@ -1147,7 +1147,7 @@ def plot_sensitivity_sweeps_1d(
             color_n1 = OKABE_ITO[0]
             color_n2 = OKABE_ITO[1]
 
-            # Lewa oś: N1 (straty)
+            # Left axis: N1 (loss)
             line1 = ax1.plot(
                 df_p[param],
                 df_p["N1_pred"],
@@ -1181,7 +1181,7 @@ def plot_sensitivity_sweeps_1d(
                 )
                 lines.append(line_ref)
 
-            # Prawa oś: N2 (odwrotny cel - wychwyt)
+            # Right axis: N2 (capture)
             ax2 = ax1.twinx()
             line2 = ax2.plot(
                 df_p[param],
@@ -1241,9 +1241,9 @@ def plot_sensitivity_heatmap_single(
     contour_levels: int = 16,
 ) -> Dict[str, Path]:
     """
-    Generuje pojedynczą, autonomiczną mapę konturową 2D (heatmap) dla wybranej pary i celu.
-    Dla N1 (straty): colormap viridis_r (żółty = najmniejsze straty / optymalne).
-    Dla N2 (wychwyt): colormap viridis (żółty = największy wychwyt / optymalne).
+    Generates an autonomous 2D interaction contour map (heatmap) for selected parameter pair.
+    For N1 (loss): colormap viridis_r (yellow = minimal loss / optimal).
+    For N2 (capture): colormap viridis (yellow = maximal capture / optimal).
     Czysta powierzchnia odpowiedzi bez linii izoliniowych i bez markera punktu CFD (wg wytycznych).
     """
     with publication_style():
@@ -1295,7 +1295,7 @@ def plot_sensitivity_heatmaps_2d(
 ) -> Dict[str, Any]:
     """
     Generuje Fig 4b: Mapy konturowe 2D interakcji geometrycznych dla kluczowych par.
-    Domyślnie generuje ZARÓWNO połączoną siatkę 2x2, JAK I 4 osobne figury
+    By default generates BOTH composite 2x2 grid AND standalone figures
     (Alfa-Beta N1/N2 oraz H1-H2 N1/N2).
     """
     saved_all: Dict[str, Any] = {}
@@ -1372,7 +1372,7 @@ def plot_sensitivity_heatmaps_2d(
             )
             saved_all[fname_n2] = res_n2
 
-    # 2. Zapis połączonej siatki 2x2
+    # 2. Save composite 2x2 grid
     with publication_style():
         fig, axes = plt.subplots(len(param_pairs), 2, figsize=(7.6, 3.6 * len(param_pairs)))
 
@@ -1434,8 +1434,8 @@ def plot_convergence(
     figsize: Tuple[float, float] = (4.5, 4.8),
 ) -> Dict[str, Path]:
     """
-    Generuje Fig 5a: Zbieżność algorytmu genetycznego NSGA-II w kolejnych pokoleniach.
-    Dwa panele: minimalizacja N1 (góra) i maksymalizacja Delta (dół).
+    Generates Figure 5a: Multi-Objective NSGA-II Convergence across Generations.
+    Dual panels: N1 minimization (top) and Delta maximization (bottom).
     """
     if "n1_min" in log_df.columns:
         generations = log_df["gen"].values if "gen" in log_df.columns else log_df.index.values
@@ -1506,10 +1506,10 @@ def plot_pareto_front(
     inset_ylim: Tuple[float, float] = (5840.0, 5866.0),
 ) -> Dict[str, Path]:
     """
-    Generuje Fig 5b: Przestrzeń kryteriów i Front Pareto rozwiązań niedominowanych.
-    Oś X: Straty N1 [particles/s], Oś Y: Zysk wychwytu Delta [particles/s].
-    Zaznaczenie populacji przeszukanej, frontu Pareto, klastrów K-Means oraz baseline CFD.
-    Zawiera powiększenie (inset zoom) ukazujące rozdzielenie klastrów w skali mikro.
+    Generates Figure 5b: Objective Space and Pareto Optimal Front.
+    X axis: Particle loss N1 [particles/s], Y axis: Net capture advantage Delta [particles/s].
+    Highlights design space exploration, Pareto front, K-Means clusters, and baseline CFD.
+    Includes inset zoom detailing micro-scale cluster separation.
     """
     x_col = "N1_pred" if "N1_pred" in pareto_df.columns else "N1"
     y_col = "Delta_pred" if "Delta_pred" in pareto_df.columns else "Delta"
@@ -1519,7 +1519,7 @@ def plot_pareto_front(
     with publication_style():
         fig, ax = plt.subplots(figsize=figsize)
 
-        # 1. Chmura wszystkich przeszukanych osobników (design space)
+        # 1. Explored design space points
         ax.scatter(
             all_population_df[x_pop_col],
             all_population_df[y_pop_col],
@@ -1531,7 +1531,7 @@ def plot_pareto_front(
             zorder=2,
         )
 
-        # 2. Rozwiązania z Frontu Pareto
+        # 2. Non-dominated Pareto front solutions
         if cluster_col and cluster_col in pareto_df.columns:
             clusters = np.sort(pareto_df[cluster_col].unique())
             cluster_colors = [OKABE_ITO[0], OKABE_ITO[2], OKABE_ITO[3], OKABE_ITO[5]]
@@ -1567,7 +1567,7 @@ def plot_pareto_front(
                 zorder=4,
             )
 
-        # Połączenie punktów frontu Pareto linią kompromisu
+        # Connect Pareto front points with trade-off spline
         pareto_sorted = pareto_df.sort_values(by=x_col)
         ax.plot(
             pareto_sorted[x_col],
@@ -1606,7 +1606,7 @@ def plot_pareto_front(
 
         fig.tight_layout(pad=0.8)
 
-        # 4. Widok powiększony (inset zoom) uwidaczniający rozdzielenie klastrów 1 i 2
+        # 4. Inset zoom view highlighting separation of clusters 1 and 2
         if show_inset:
             ax_ins = inset_axes(
                 ax,
@@ -1697,9 +1697,9 @@ def plot_optimization_figure_5(
 ) -> Dict[str, Any]:
     """
     Generuje komplet publikacyjny Figury 5:
-    Panel (a): Historia zbieżności NSGA-II w kolejnych pokoleniach (N1 i Delta)
-    Panel (b): Wielokryterialna przestrzeń kompromisu i Front Pareto wraz z baseline CFD oraz widokiem powiększonym klastrów.
-    Domyślnie generuje ZARÓWNO połączony kompozyt dwukolumnowy, JAK I osobne panele autonomiczne.
+    Panel (a): NSGA-II generational convergence history (N1 and Delta)
+    Panel (b): Multi-objective trade-off space and Pareto front with CFD baseline and cluster inset.
+    By default generates BOTH two-column composite AND standalone panels.
     """
     saved_all: Dict[str, Any] = {}
 
@@ -1729,12 +1729,12 @@ def plot_optimization_figure_5(
         )
         saved_all[fname_b] = res_b
 
-    # Kompozyt połączony (dwukolumnowy: lewa kolumna zbieżność, prawa kolumna front Pareto)
+    # Two-column composite: left column convergence, right column Pareto front
     with publication_style():
         fig = plt.figure(figsize=(7.6, 4.0))
         gs = fig.add_gridspec(2, 2, width_ratios=[1.0, 1.25], hspace=0.25, wspace=0.32)
 
-        # 1. Zbieżność (lewa strona)
+        # 1. Generational convergence (left panel)
         ax_conv1 = fig.add_subplot(gs[0, 0])
         ax_conv2 = fig.add_subplot(gs[1, 0], sharex=ax_conv1)
 
@@ -1863,7 +1863,7 @@ def plot_optimization_figure_5(
         ax_pareto.yaxis.set_minor_locator(AutoMinorLocator())
         ax_pareto.legend(loc="lower left", fontsize=7.5, framealpha=0.90)
 
-        # Widok powiększony (inset zoom) w panelu (b) kompozytu
+        # Inset zoom in composite panel (b)
         if show_inset:
             ax_ins = inset_axes(
                 ax_pareto,
@@ -1955,7 +1955,7 @@ def plot_case_study_efficiency(
     figsize: Tuple[float, float] = (4.5, 3.8),
 ) -> Dict[str, Path]:
     """
-    Generuje Fig 6a: Walidacja inżynieryjna - sprawności separacji eta_1 (straty) i eta_2 (wychwyt) [%].
+    Generates Figure 6a: Engineering Validation - Separation Efficiencies eta_1 (loss) and eta_2 (capture) [%].
     """
     with publication_style():
         fig, ax = plt.subplots(figsize=figsize)
@@ -2023,7 +2023,7 @@ def plot_case_study_advantage(
     figsize: Tuple[float, float] = (4.5, 3.8),
 ) -> Dict[str, Path]:
     """
-    Generuje Fig 6b: Walidacja inżynieryjna - zysk netto wychwytu cząstek Delta [particles/s].
+    Generates Figure 6b: Engineering Validation - Net Collection Advantage Delta [particles/s].
     """
     with publication_style():
         fig, ax = plt.subplots(figsize=figsize)
@@ -2103,9 +2103,9 @@ def plot_case_study_comparison(
 ) -> Dict[str, Any]:
     """
     Generuje komplet publikacyjny Figury 6:
-    Panel (a): Sprawności separacji: sprawność strat eta_1 oraz sprawność wychwytu eta_2 [%].
-    Panel (b): Netto zysk odzysku cząstek Delta = N2 - N1 [particles/s] z procentowym wzrostem względem baseline CFD.
-    Domyślnie generuje ZARÓWNO połączony kompozyt dwukolumnowy, JAK I osobne panele autonomiczne.
+    Panel (a): Separation efficiencies: loss efficiency eta_1 and capture efficiency eta_2 [%].
+    Panel (b): Net particle collection advantage Delta = N2 - N1 [particles/s] with percentage gain over CFD baseline.
+    By default generates BOTH two-column composite AND standalone panels.
     """
     saved_all: Dict[str, Any] = {}
 
@@ -2135,7 +2135,7 @@ def plot_case_study_comparison(
         )
         saved_all[fname_b] = res_b
 
-    # Kompozyt połączony (dwukolumnowy)
+    # Two-column composite
     with publication_style():
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
 
