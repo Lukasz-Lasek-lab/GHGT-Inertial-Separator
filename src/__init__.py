@@ -2,7 +2,16 @@
 MsCO2limit - Surrogate Modeling and Multi-Objective Optimization Framework for Inertial Particle Separators.
 """
 
-from src.features import BASE_FEATURES, FEATURE_NAMES, TARGET_NAMES, create_features
+from src.constants import (
+    TOTAL_PARTICLES,
+    BASE_FEATURES,
+    TARGET_COLUMNS,
+    TARGET_NAMES,
+    PARAM_BOUNDS,
+    NOMINAL_BASELINE,
+    PARAM_UNITS,
+)
+from src.features import FEATURE_NAMES, create_features
 
 try:
     from src.genetic import run_genetic_optimization
@@ -33,9 +42,14 @@ except ImportError:
     run_sensitivity_analysis = None
 
 __all__ = [
+    "TOTAL_PARTICLES",
     "BASE_FEATURES",
-    "FEATURE_NAMES",
+    "TARGET_COLUMNS",
     "TARGET_NAMES",
+    "PARAM_BOUNDS",
+    "NOMINAL_BASELINE",
+    "PARAM_UNITS",
+    "FEATURE_NAMES",
     "create_features",
     "build_regressor",
     "load_model",

@@ -20,10 +20,7 @@ from sklearn.feature_selection import SelectKBest, VarianceThreshold, f_regressi
 from sklearn.linear_model import LassoCV
 
 from config.path import config_dir, processed_data_dir, raw_data_dir, demo_data_file
-
-# 4 baseline geometric design parameters (always preserved)
-BASE_FEATURES: List[str] = ["Alfa", "Beta", "H1", "H2"]
-TOTAL_PARTICLES: int = 6417
+from src.constants import BASE_FEATURES, TARGET_NAMES, TOTAL_PARTICLES
 
 
 def load_raw_dataset(dataset_path: Optional[Path] = None) -> pd.DataFrame:
@@ -56,7 +53,12 @@ def load_raw_dataset(dataset_path: Optional[Path] = None) -> pd.DataFrame:
     # Normalize column names regardless of case and degree symbols
     col_map = {}
     for col in df_raw.columns:
-        col_lower = str(col).lower()
+        col_clean = str(col).strip()
+        col_lower = col_clean.lower()
+        if col_clean in ["Alfa", "Beta", "H1", "H2", "N1", "N2", "N3", "Delta", "eta_1_pct", "eta_2_pct"]:
+            continue
+        if any(term in col_lower for term in ["cubed", "squared", "plus", "minus", "div", "log", "sin", "cos"]):
+            continue
         if "alfa" in col_lower or "alpha" in col_lower:
             col_map[col] = "Alfa"
         elif "beta" in col_lower:
@@ -275,7 +277,7 @@ def run_feature_selection(
         "base_features": BASE_FEATURES,
         "engineered_features": [f for f in selected_features if f not in BASE_FEATURES],
         "all_selected_features": selected_features,
-        "target_names": ["N1", "Delta"],
+        "target_names": TARGET_NAMES,
     }
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(features_meta, f, indent=4)

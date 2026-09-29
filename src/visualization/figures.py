@@ -25,7 +25,13 @@ from config.path import (
     surrogate_models_dir,
     optimization_results_dir,
 )
-from src.features import BASE_FEATURES, FEATURE_NAMES, create_features
+from src.constants import (
+    BASE_FEATURES,
+    DEFAULT_PARAM_RANGES,
+    DEFAULT_REFERENCE_PARAMS,
+    TOTAL_PARTICLES,
+)
+from src.features import FEATURE_NAMES, create_features
 from src.models import evaluate_cv, load_model, predict, train_final_model
 from src.visualization.publication_plots import (
     plot_model_diagnostics,
@@ -35,24 +41,6 @@ from src.visualization.publication_plots import (
     plot_optimization_figure_5,
     plot_case_study_comparison,
 )
-
-# CFD Reference baseline settings
-DEFAULT_REFERENCE_PARAMS: Dict[str, float] = {
-    "Alfa": 60.0,
-    "Beta": 60.0,
-    "H1": 0.038,
-    "H2": 0.038,
-}
-
-# Physical sweep boundaries aligned with surrogate domain
-DEFAULT_PARAM_RANGES: Dict[str, Tuple[float, float]] = {
-    "Alfa": (42.75, 60.0),
-    "Beta": (42.75, 60.0),
-    "H1": (0.0080, 0.0609),
-    "H2": (0.0080, 0.0609),
-}
-
-TOTAL_PARTICLES: int = 6417
 
 
 class _N2PredictorWrapper:
@@ -370,7 +358,7 @@ def generate_figure_6(
     out = Path(output_dir) if output_dir else default_figures_dir
     model = _ensure_active_model()
 
-    geo_baseline = {"Alfa": 60.0, "Beta": 60.0, "H1": 0.0380, "H2": 0.0380}
+    geo_baseline = dict(DEFAULT_REFERENCE_PARAMS)
     geo_opt1 = {"Alfa": 43.56, "Beta": 48.24, "H1": 0.0323, "H2": 0.0588}
     geo_opt2 = {"Alfa": 42.97, "Beta": 48.22, "H1": 0.0274, "H2": 0.0386}
 

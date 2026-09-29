@@ -23,7 +23,8 @@ from config.path import (
     optimization_results_dir,
     demo_data_file,
 )
-from src.features import BASE_FEATURES, create_features
+from src.constants import BASE_FEATURES, DEFAULT_PARAM_BOUNDS, PARAM_BOUNDS
+from src.features import create_features
 from src.models import load_model, predict, train_final_model
 
 os.environ["LOKY_MAX_CPU_COUNT"] = "4"
@@ -169,15 +170,6 @@ def setup_toolbox(
     return toolbox
 
 
-# Physical domain bounds for inertial separator design:
-# - Angles (Alfa, Beta): [42.75 deg, 60.00 deg]
-# - Heights (H1, H2): [0.0080 m, 0.0609 m] (8.0 mm to 60.9 mm)
-DEFAULT_PARAM_BOUNDS: Dict[str, Tuple[float, float]] = {
-    "Alfa": (42.75, 60.0),
-    "Beta": (42.75, 60.0),
-    "H1": (0.0080, 0.0609),
-    "H2": (0.0080, 0.0609),
-}
 
 
 def run_genetic_optimization(

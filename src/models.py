@@ -25,6 +25,7 @@ from config.path import (
     evaluation_results_dir,
     demo_data_file,
 )
+from src.constants import TARGET_NAMES, TOTAL_PARTICLES
 from src.features import FEATURE_NAMES, prepare_targets
 
 # Default fallback hyperparameters
@@ -300,8 +301,8 @@ def predict(
 
     raw_pred = model.predict(X)
 
-    N1_pred = np.clip(raw_pred[:, 0], 0, None)
-    Delta_pred = np.clip(raw_pred[:, 1], 0, None)
+    N1_pred = np.clip(raw_pred[:, 0], 0, TOTAL_PARTICLES)
+    Delta_pred = np.clip(raw_pred[:, 1], 0, TOTAL_PARTICLES)
     N2_pred = N1_pred + Delta_pred
 
     return N1_pred, N2_pred, Delta_pred

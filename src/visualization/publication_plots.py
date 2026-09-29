@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 from config.path import figures_dir
+from src.constants import PARAM_BOUNDS
 
 # ==============================================================================
 # 1. COLOR PALETTES AND CVD SYMBOLS (Color Vision Deficiency Friendly & Grayscale)
@@ -1302,8 +1303,8 @@ def plot_sensitivity_heatmaps_2d(
 
     if param_pairs is None:
         param_pairs = [
-            ("Alfa", "Beta", (42.75, 60.0), (42.75, 60.0)),
-            ("H1", "H2", (0.0080, 0.0609), (0.0080, 0.0609)),
+            ("Alfa", "Beta", PARAM_BOUNDS["Alfa"], PARAM_BOUNDS["Beta"]),
+            ("H1", "H2", PARAM_BOUNDS["H1"], PARAM_BOUNDS["H2"]),
         ]
 
     panel_letters = [("e", "f"), ("g", "h")]

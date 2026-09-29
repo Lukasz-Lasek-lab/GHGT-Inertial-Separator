@@ -85,7 +85,8 @@ def main():
         parser.print_help()
         sys.exit(0)
 
-    from config.path import figures_dir
+    from config.path import figures_dir, create_directories
+    create_directories()
     import src.visualization.figures as fig_module
 
     out_dir = Path(args.output_dir) if args.output_dir else figures_dir
@@ -106,7 +107,7 @@ def main():
         print("\n>>> Running NSGA-II Multi-Objective Genetic Optimization...")
         run_optimization_pipeline(use_demo=args.demo)
 
-    if args.figure == 2 or (args.all and not args.figure):
+    if args.figure == 2:
         fig_module.generate_figure_2(output_dir=out_dir, formats=formats)
     elif args.figure == 3:
         fig_module.generate_figure_3(output_dir=out_dir, formats=formats)

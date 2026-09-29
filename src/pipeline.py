@@ -25,6 +25,7 @@ if str(project_root) not in sys.path:
 
 from config.path import (
     config_dir,
+    create_directories,
     diagnostic_plots_dir,
     processed_data_dir,
     raw_data_dir,
@@ -51,7 +52,8 @@ def resolve_data_paths(use_demo: bool = False):
 
     if use_demo:
         print("[INFO] Operating in DEMONSTRATION mode with synthetic benchmark data.")
-        return demo_data_file, demo_data_file, features_json_path
+        demo_processed_path = processed_data_dir / "df_selected_demo.csv"
+        return demo_data_file, demo_processed_path, features_json_path
 
     if processed_csv_path.exists():
         return processed_csv_path, processed_csv_path, features_json_path
@@ -68,7 +70,8 @@ def resolve_data_paths(use_demo: bool = False):
     if demo_data_file.exists():
         print("[NOTICE] Proprietary CFD dataset not detected. Utilizing demonstration dataset.")
         print("[NOTICE] (See README.md Data and Model Availability Statement to request research data).")
-        return demo_data_file, demo_data_file, features_json_path
+        demo_processed_path = processed_data_dir / "df_selected_demo.csv"
+        return demo_data_file, demo_processed_path, features_json_path
 
     raise FileNotFoundError(
         "No dataset found. Please provide data in data/raw/ or run with '--demo'."
@@ -78,7 +81,8 @@ def resolve_data_paths(use_demo: bool = False):
 def run_cv_pipeline(data_path: Optional[Path] = None, use_demo: bool = False):
     """Executes 5-fold cross-validation evaluation pipeline."""
     if data_path is None:
-        _, data_path, _ = resolve_data_paths(use_demo=use_demo)
+        raw_or_active, processed_csv, _ = resolve_data_paths(use_demo=use_demo)
+        data_path = processed_csv if processed_csv.exists() else raw_or_active
     plot_cv_path = diagnostic_plots_dir / "actual_vs_predicted_cv.png"
     df_folds, df_summary, oof_df = evaluate_cv(data_path=data_path, save_plot_path=plot_cv_path)
     print("\n--- 5-Fold Cross-Validation Metrics Summary ---")
@@ -89,14 +93,16 @@ def run_cv_pipeline(data_path: Optional[Path] = None, use_demo: bool = False):
 def run_training_pipeline(data_path: Optional[Path] = None, use_demo: bool = False):
     """Trains final production surrogate model."""
     if data_path is None:
-        _, data_path, _ = resolve_data_paths(use_demo=use_demo)
+        raw_or_active, processed_csv, _ = resolve_data_paths(use_demo=use_demo)
+        data_path = processed_csv if processed_csv.exists() else raw_or_active
     return train_final_model(data_path=data_path)
 
 
 def run_optimization_pipeline(data_path: Optional[Path] = None, use_demo: bool = False, pop_size: int = 100, n_gen: int = 25):
     """Executes multi-objective NSGA-II optimization algorithm."""
     if data_path is None:
-        _, data_path, _ = resolve_data_paths(use_demo=use_demo)
+        raw_or_active, processed_csv, _ = resolve_data_paths(use_demo=use_demo)
+        data_path = processed_csv if processed_csv.exists() else raw_or_active
     return run_genetic_optimization(data_path=data_path, pop_size=pop_size, n_gen=n_gen)
 
 
@@ -158,6 +164,7 @@ def main():
     )
 
     args = parser.parse_args()
+    create_directories()
 
     print("=" * 70)
     print("MsCO2limit ML & NSGA-II Optimization Pipeline".center(70))
@@ -176,12 +183,14 @@ def main():
         )
         reload_features()
 
+    active_data_path = processed_csv_path if processed_csv_path.exists() else raw_or_active_path
+
     # 2. Hyperparameter optimization
     best_params_json = config_dir / "best_params.json"
     if args.step == "tune" or args.tune or (args.step in ["train", "all"] and not best_params_json.exists()):
         print(f"\n--- [STAGE: Hyperparameter Tuning via Optuna ({args.n_trials} trials)] ---")
         tune_hyperparameters(
-            data_path=processed_csv_path,
+            data_path=active_data_path,
             n_trials=args.n_trials,
             save_json_path=best_params_json,
         )
@@ -193,21 +202,21 @@ def main():
     # 3. Final model training
     if args.step in ["train", "all"]:
         print("\n--- [STAGE: Surrogate Model Training on Full Dataset] ---")
-        train_final_model(data_path=processed_csv_path)
+        train_final_model(data_path=active_data_path)
 
     # 4. Cross-validation and model evaluation
     if args.step in ["cv", "eval", "all"]:
         print("\n--- [STAGE: 5-Fold Cross-Validation and Predictive Evaluation] ---")
         plot_cv_path = diagnostic_plots_dir / "actual_vs_predicted_cv.png"
         df_folds, df_summary, oof_df = evaluate_cv(
-            data_path=processed_csv_path, save_plot_path=plot_cv_path
+            data_path=active_data_path, save_plot_path=plot_cv_path
         )
         print("\n5-Fold Cross-Validation Summary Metrics:")
         print(df_summary.to_string(index=False))
 
         plot_test_path = diagnostic_plots_dir / "actual_vs_predicted_test.png"
         _, metrics_test, _, _ = evaluate_train_test(
-            data_path=processed_csv_path, save_plot_path=plot_test_path
+            data_path=active_data_path, save_plot_path=plot_test_path
         )
         print("\nTest Partition Evaluation (80/20 train/test):")
         for k, v in metrics_test.items():
@@ -218,7 +227,7 @@ def main():
     if args.step in ["optimize", "all"]:
         print("\n--- [STAGE: Multi-Objective NSGA-II Optimization] ---")
         pop_df, hof_df, pareto_df, log_df = run_genetic_optimization(
-            data_path=processed_csv_path,
+            data_path=active_data_path,
             pop_size=args.pop_size,
             n_gen=args.n_gen,
         )

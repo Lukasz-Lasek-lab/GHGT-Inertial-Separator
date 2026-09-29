@@ -95,6 +95,4 @@ __all__ = [
     "plots_genetic_dir",
     "create_directories",
 ]
-
-# Ensure directory structure exists
-create_directories()
+

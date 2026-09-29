@@ -15,36 +15,18 @@ import pandas as pd
 import seaborn as sns
 
 from config.path import sensitivity_plots_dir
-from src.features import BASE_FEATURES, create_features
+from src.constants import (
+    BASE_FEATURES,
+    DEFAULT_PARAM_RANGES,
+    DEFAULT_REFERENCE_PARAMS,
+    NOMINAL_BASELINE,
+    PARAM_BOUNDS,
+    PARAM_RANGES,
+    PARAM_UNITS,
+    REFERENCE_PARAMS,
+)
+from src.features import create_features
 from src.models import load_model, predict, train_final_model
-
-# Physical geometric ranges matching surrogate domain bounds:
-# - Angles (Alfa, Beta): [42.75 deg, 60.00 deg]
-# - Heights (H1, H2): [0.0080 m, 0.0609 m] (8 mm to 60.9 mm)
-DEFAULT_PARAM_RANGES: Dict[str, Tuple[float, float]] = {
-    "Alfa": (42.75, 60.0),
-    "Beta": (42.75, 60.0),
-    "H1": (0.0080, 0.0609),
-    "H2": (0.0080, 0.0609),
-}
-
-# CFD Experimental Reference Baseline Geometry:
-DEFAULT_REFERENCE_PARAMS: Dict[str, float] = {
-    "Alfa": 60.0,
-    "Beta": 60.0,
-    "H1": 0.038,
-    "H2": 0.038,
-}
-
-REFERENCE_PARAMS = DEFAULT_REFERENCE_PARAMS
-PARAM_RANGES = DEFAULT_PARAM_RANGES
-
-PARAM_UNITS: Dict[str, str] = {
-    "Alfa": "deg",
-    "Beta": "deg",
-    "H1": "m",
-    "H2": "m",
-}
 
 
 def calculate_reference_predictions(model, ref_params: Dict[str, float]) -> Dict[str, float]:

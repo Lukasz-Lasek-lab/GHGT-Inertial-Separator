@@ -11,10 +11,7 @@ import numpy as np
 import pandas as pd
 
 from config.path import config_dir
-
-# 4 baseline geometric design parameters
-BASE_FEATURES: List[str] = ["Alfa", "Beta", "H1", "H2"]
-TARGET_NAMES: List[str] = ["N1", "Delta"]
+from src.constants import BASE_FEATURES, TARGET_NAMES
 
 
 def load_selected_feature_names(json_path: Optional[Path] = None) -> Tuple[List[str], List[str]]:

@@ -15,8 +15,7 @@ import pandas as pd
 from sklearn.cluster import KMeans
 
 from config.path import optimization_results_dir
-
-TOTAL_PARTICLES: int = 6417
+from src.constants import BASE_FEATURES, TOTAL_PARTICLES
 
 
 def select_optimal_configurations(
@@ -52,17 +51,20 @@ def select_optimal_configurations(
     if len(df) == 0:
         raise ValueError("Pareto solution dataset is empty.")
 
+    n1_col = "N1_pred" if "N1_pred" in df.columns else "N1"
+    n2_col = "N2_pred" if "N2_pred" in df.columns else "N2"
+    delta_col = "Delta_pred" if "Delta_pred" in df.columns else "Delta"
+
     # K-Means clustering
     if len(df) >= n_clusters:
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        clustering_features = df[["N1_pred", "N2_pred"]].values
+        clustering_features = df[[n1_col, n2_col]].values
         df["cluster"] = kmeans.fit_predict(clustering_features)
 
     # Compute complete particle balance
-    n1_raw = df["N1_pred"].values
-    delta_raw = df["Delta_pred"].values
-    n2_raw = df["N2_pred"].values
-    n3_raw = np.clip(TOTAL_PARTICLES - n1_raw - n2_raw, 0, TOTAL_PARTICLES)
+    n1_raw = df[n1_col].values
+    delta_raw = df[delta_col].values
+    n2_raw = df[n2_col].values
 
     # Normalized compromise score: lower score indicates superior compromise (min loss N1, max advantage Delta)
     n1_min, n1_max = n1_raw.min(), n1_raw.max()
@@ -79,24 +81,25 @@ def select_optimal_configurations(
         df_export["Beta"] = df_export["Beta"].round(2)
         df_export["H1"] = df_export["H1"].round(4)
         df_export["H2"] = df_export["H2"].round(4)
-        df_export["N1"] = np.round(n1_raw).astype(int)
-        df_export["N2"] = np.round(n2_raw).astype(int)
-        df_export["Delta"] = np.round(delta_raw).astype(int)
-        df_export["N3"] = np.round(n3_raw).astype(int)
-        df_export["eta_1_pct"] = np.round((n1_raw / TOTAL_PARTICLES) * 100.0, 2)
-        df_export["eta_2_pct"] = np.round((n2_raw / TOTAL_PARTICLES) * 100.0, 2)
+        df_export["N1"] = np.clip(np.round(n1_raw).astype(int), 0, TOTAL_PARTICLES)
+        n2_rounded = np.clip(np.round(n2_raw).astype(int), 0, TOTAL_PARTICLES)
+        df_export["N2"] = np.minimum(n2_rounded, TOTAL_PARTICLES - df_export["N1"])
+        df_export["Delta"] = (df_export["N2"] - df_export["N1"]).astype(int)
+        df_export["N3"] = (TOTAL_PARTICLES - df_export["N1"] - df_export["N2"]).astype(int)
+        df_export["eta_1_pct"] = np.round((df_export["N1"] / TOTAL_PARTICLES) * 100.0, 2)
+        df_export["eta_2_pct"] = np.round((df_export["N2"] / TOTAL_PARTICLES) * 100.0, 2)
         df_export["score"] = df_export["score"].round(4)
     else:
-        df_export["N1"] = n1_raw
-        df_export["N2"] = n2_raw
-        df_export["Delta"] = delta_raw
-        df_export["N3"] = n3_raw
-        df_export["eta_1_pct"] = (n1_raw / TOTAL_PARTICLES) * 100.0
-        df_export["eta_2_pct"] = (n2_raw / TOTAL_PARTICLES) * 100.0
+        df_export["N1"] = np.clip(n1_raw, 0, TOTAL_PARTICLES)
+        df_export["N2"] = np.minimum(np.clip(n2_raw, 0, TOTAL_PARTICLES), TOTAL_PARTICLES - df_export["N1"])
+        df_export["Delta"] = df_export["N2"] - df_export["N1"]
+        df_export["N3"] = TOTAL_PARTICLES - df_export["N1"] - df_export["N2"]
+        df_export["eta_1_pct"] = (df_export["N1"] / TOTAL_PARTICLES) * 100.0
+        df_export["eta_2_pct"] = (df_export["N2"] / TOTAL_PARTICLES) * 100.0
 
     # Geometric deduplication
     before = len(df_export)
-    df_export = df_export.drop_duplicates(subset=["Alfa", "Beta", "H1", "H2"])
+    df_export = df_export.drop_duplicates(subset=BASE_FEATURES)
     after = len(df_export)
     print(f"[INFO] Removed {before - after} duplicates. Preserved {after} unique Pareto design configurations.")
 
