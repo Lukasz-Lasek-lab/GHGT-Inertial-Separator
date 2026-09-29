@@ -403,6 +403,7 @@ def generate_all_figures(
     output_dir: Optional[Union[str, Path]] = None,
     formats: Sequence[str] = ("pdf", "svg", "png"),
     use_demo: bool = False,
+    n_points_1d: int = 100,
 ) -> Dict[str, Any]:
     """Generates all publication figures (Fig 2 - Fig 6) in sequence."""
     out = Path(output_dir) if output_dir else default_figures_dir
@@ -419,7 +420,12 @@ def generate_all_figures(
     results["Fig3"] = generate_figure_3(output_dir=out, formats=formats, use_demo=use_demo)
 
     print("\n>>> [3/5] Figure 4: Sensitivity Sweeps & Contours")
-    results["Fig4"] = generate_figure_4(output_dir=out, formats=formats, use_demo=use_demo)
+    results["Fig4"] = generate_figure_4(
+        output_dir=out,
+        formats=formats,
+        n_points_1d=n_points_1d,
+        use_demo=use_demo,
+    )
 
     print("\n>>> [4/5] Figure 5: NSGA-II Optimization & Pareto Front")
     results["Fig5"] = generate_figure_5(output_dir=out, formats=formats, use_demo=use_demo)

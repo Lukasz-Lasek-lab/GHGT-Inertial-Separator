@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import matplotlib as mpl
+mpl.use("Agg")
 import matplotlib.pyplot as plt
 
 from config.path import figures_dir
