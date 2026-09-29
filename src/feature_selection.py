@@ -21,6 +21,7 @@ from sklearn.linear_model import LassoCV
 
 from config.path import config_dir, processed_data_dir, raw_data_dir, demo_data_file
 from src.constants import BASE_FEATURES, TARGET_NAMES, TOTAL_PARTICLES
+from src.features.registry import FeatureRegistry
 
 
 def load_raw_dataset(dataset_path: Optional[Path] = None) -> pd.DataFrame:
@@ -91,52 +92,11 @@ def load_raw_dataset(dataset_path: Optional[Path] = None) -> pd.DataFrame:
 
 def generate_candidate_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Expands base geometric inputs into a rich aerodynamic candidate feature space:
-    - Products and ratios
-    - Sums and absolute differences
-    - Natural logarithms
-    - Trigonometric functions (sin, cos in radians)
-    - Second- and third-degree polynomial terms
+    Expands base geometric inputs into a rich aerodynamic candidate feature space
+    via the centralized declarative FeatureRegistry.
+    Guarantees SSOT parity across all pipeline stages without memory fragmentation.
     """
-    df_feat = pd.DataFrame(index=df.index)
-
-    alfa = df["Alfa"].astype(float)
-    beta = df["Beta"].astype(float)
-    h1 = df["H1"].astype(float)
-    h2 = df["H2"].astype(float)
-
-    # Base design parameters
-    df_feat["Alfa"] = alfa
-    df_feat["Beta"] = beta
-    df_feat["H1"] = h1
-    df_feat["H2"] = h2
-
-    # Products and ratios
-    df_feat["Alfa_Beta"] = alfa * beta
-    df_feat["H1_H2"] = h1 * h2
-    df_feat["Alfa_div_Beta"] = alfa / (beta + 1e-6)
-    df_feat["H1_div_H2"] = h1 / (h2 + 1e-6)
-    df_feat["log_H1"] = np.log(h1 + 1e-6)
-    df_feat["log_H2"] = np.log(h2 + 1e-6)
-
-    # Sums and differences
-    df_feat["Alfa_plus_Beta"] = alfa + beta
-    df_feat["Alfa_minus_Beta"] = np.abs(alfa - beta)
-    df_feat["H1_plus_H2"] = h1 + h2
-    df_feat["H1_minus_H2"] = np.abs(h1 - h2)
-
-    # Trigonometric descriptors
-    df_feat["sin_Alfa"] = np.sin(np.radians(alfa))
-    df_feat["cos_Alfa"] = np.cos(np.radians(alfa))
-    df_feat["sin_Beta"] = np.sin(np.radians(beta))
-    df_feat["cos_Beta"] = np.cos(np.radians(beta))
-
-    # Polynomial powers
-    for col_name, s in [("Alfa", alfa), ("Beta", beta), ("H1", h1), ("H2", h2)]:
-        df_feat[f"{col_name}_squared"] = s ** 2
-        df_feat[f"{col_name}_cubed"] = s ** 3
-
-    return df_feat
+    return FeatureRegistry.compute_all(df)
 
 
 def select_best_features(

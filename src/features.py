@@ -2,16 +2,21 @@
 Feature Engineering module for MsCO2limit inertial particle separator.
 Dynamically supports the engineered feature set configured in config/selected_features.json
 and provides vector computation routines for ML surrogates, NSGA-II optimization, and sensitivity analysis.
+Backed by declarative FeatureRegistry as Single Source of Truth (SSOT).
 """
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
+# Enable submodule resolution for src/features/ (e.g. src.features.registry)
+__path__ = [str(Path(__file__).resolve().parent / "features")]
+
 from config.path import config_dir
 from src.constants import BASE_FEATURES, TARGET_NAMES
+from src.features.registry import FeatureRegistry, EPSILON
 
 
 def load_selected_feature_names(json_path: Optional[Path] = None) -> Tuple[List[str], List[str]]:
@@ -50,6 +55,26 @@ def load_selected_feature_names(json_path: Optional[Path] = None) -> Tuple[List[
 FEATURE_NAMES, ENGINEERED_FEATURES = load_selected_feature_names()
 
 
+def load_selected_features(json_path: Optional[Path] = None) -> List[str]:
+    """
+    Loads and returns all active selected feature names from JSON.
+    Maintained for backward compatibility.
+    """
+    all_feats, _ = load_selected_feature_names(json_path)
+    return all_feats
+
+
+def get_selected_features(json_path: Optional[Path] = None) -> List[str]:
+    """
+    Lazy getter returning active selected feature names.
+    If json_path is provided or FEATURE_NAMES is empty, reloads the configuration.
+    """
+    global FEATURE_NAMES
+    if json_path is not None or not FEATURE_NAMES:
+        reload_features(json_path)
+    return list(FEATURE_NAMES)
+
+
 def reload_features(json_path: Optional[Path] = None) -> List[str]:
     """
     Reloads the active feature list (e.g. after running feature selection).
@@ -67,72 +92,10 @@ def compute_single_feature(
     h2: Union[float, np.ndarray, pd.Series],
 ) -> Union[float, np.ndarray, pd.Series]:
     """
-    Geometric formula registry: computes a single engineered feature from input dimensions.
+    Computes a single engineered or base feature from input dimensions using FeatureRegistry.
+    Maintains full backward compatibility for scalar, numpy array, and pandas Series inputs.
     """
-    eps = 1e-6
-    if feat_name == "Alfa":
-        return alfa
-    elif feat_name == "Beta":
-        return beta
-    elif feat_name == "H1":
-        return h1
-    elif feat_name == "H2":
-        return h2
-
-    # Products and quotients
-    elif feat_name == "Alfa_Beta":
-        return alfa * beta
-    elif feat_name == "H1_H2":
-        return h1 * h2
-    elif feat_name == "Alfa_div_Beta":
-        return alfa / (beta + eps)
-    elif feat_name == "H1_div_H2":
-        return h1 / (h2 + eps)
-    elif feat_name == "log_H1":
-        return np.log(h1 + eps)
-    elif feat_name == "log_H2":
-        return np.log(h2 + eps)
-
-    # Sums and absolute differences
-    elif feat_name == "Alfa_plus_Beta":
-        return alfa + beta
-    elif feat_name == "Alfa_minus_Beta":
-        return np.abs(alfa - beta)
-    elif feat_name == "H1_plus_H2":
-        return h1 + h2
-    elif feat_name == "H1_minus_H2":
-        return np.abs(h1 - h2)
-
-    # Trigonometric functions (angles in degrees converted to radians)
-    elif feat_name == "sin_Alfa":
-        return np.sin(np.radians(alfa))
-    elif feat_name == "cos_Alfa":
-        return np.cos(np.radians(alfa))
-    elif feat_name == "sin_Beta":
-        return np.sin(np.radians(beta))
-    elif feat_name == "cos_Beta":
-        return np.cos(np.radians(beta))
-
-    # Second- and third-order powers
-    elif feat_name == "Alfa_squared":
-        return alfa ** 2
-    elif feat_name == "Alfa_cubed":
-        return alfa ** 3
-    elif feat_name == "Beta_squared":
-        return beta ** 2
-    elif feat_name == "Beta_cubed":
-        return beta ** 3
-    elif feat_name == "H1_squared":
-        return h1 ** 2
-    elif feat_name == "H1_cubed":
-        return h1 ** 3
-    elif feat_name == "H2_squared":
-        return h2 ** 2
-    elif feat_name == "H2_cubed":
-        return h2 ** 3
-
-    else:
-        raise ValueError(f"Unknown geometric feature: {feat_name}")
+    return FeatureRegistry.compute_feature(feat_name, alfa, beta, h1, h2)
 
 
 def create_features(
@@ -141,7 +104,9 @@ def create_features(
 ) -> pd.DataFrame:
     """
     Computes full set of engineered features for input DataFrame from base parameters 'Alfa', 'Beta', 'H1', 'H2'.
-    Returns DataFrame with column order strictly matching the trained surrogate expectations.
+    Returns DataFrame with column order strictly matching feature_names.
+    Avoids memory fragmentation and PerformanceWarning by constructing DataFrame from column dictionary.
+    Supports chained feature dependencies and auxiliary DataFrame columns in eval_context.
     """
     missing = [col for col in BASE_FEATURES if col not in df.columns]
     if missing:
@@ -150,15 +115,21 @@ def create_features(
     if feature_names is None:
         feature_names = FEATURE_NAMES
 
-    alfa = df["Alfa"].values.astype(float)
-    beta = df["Beta"].values.astype(float)
-    h1 = df["H1"].values.astype(float)
-    h2 = df["H2"].values.astype(float)
+    eval_context: Dict[str, Any] = {col: df[col] for col in df.columns}
+    for col in BASE_FEATURES:
+        eval_context[col] = df[col].astype(float)
 
-    df_out = pd.DataFrame(index=df.index)
+    col_dict: Dict[str, Any] = {}
+
     for feat in feature_names:
-        df_out[feat] = compute_single_feature(feat, alfa, beta, h1, h2)
+        if feat in BASE_FEATURES:
+            col_dict[feat] = eval_context[feat]
+        else:
+            val = FeatureRegistry.compute_feature(feat, eval_context)
+            col_dict[feat] = val
+            eval_context[feat] = val
 
+    df_out = pd.DataFrame(col_dict, index=df.index)
     return df_out[feature_names]
 
 
@@ -215,3 +186,19 @@ def prepare_targets(df: pd.DataFrame) -> pd.DataFrame:
         y["Delta"] = (df["N2"] - df["N1"]).values
     return y
 
+
+__all__ = [
+    "FeatureRegistry",
+    "EPSILON",
+    "FEATURE_NAMES",
+    "ENGINEERED_FEATURES",
+    "load_selected_feature_names",
+    "load_selected_features",
+    "get_selected_features",
+    "reload_features",
+    "compute_single_feature",
+    "create_features",
+    "create_feature_dict",
+    "create_feature_array",
+    "prepare_targets",
+]
