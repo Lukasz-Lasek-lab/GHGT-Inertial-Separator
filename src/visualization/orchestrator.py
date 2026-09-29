@@ -31,8 +31,14 @@ from src.constants import (
     DEFAULT_REFERENCE_PARAMS,
     TOTAL_PARTICLES,
 )
-from src.features import FEATURE_NAMES, create_features
-from src.models import evaluate_cv, load_model, predict, train_final_model
+from src.features import FEATURE_NAMES, create_features, get_selected_features
+from src.models import (
+    ensure_features_in_df,
+    evaluate_cv,
+    load_model,
+    predict,
+    train_final_model,
+)
 from src.visualization.fig2_diagnostics import plot_model_diagnostics
 from src.visualization.fig3_importance import plot_feature_importance
 from src.visualization.fig4_sensitivity import (
@@ -69,7 +75,13 @@ def _ensure_active_dataset(use_demo: bool = False) -> Path:
     def _ensure_demo_processed() -> Path:
         demo_processed = processed_data_dir / "df_selected_demo.csv"
         if demo_processed.exists():
-            return demo_processed
+            try:
+                existing_df = pd.read_csv(demo_processed)
+                missing_feats = [c for c in get_selected_features() if c not in existing_df.columns]
+                if not missing_feats:
+                    return demo_processed
+            except Exception:
+                pass
         if demo_data_file.exists():
             raw_df = pd.read_csv(demo_data_file)
             feat_df = create_features(raw_df)
@@ -170,7 +182,8 @@ def generate_figure_3(
     else:
         print(f"[INFO] Computing Permutation Feature Importance ({n_repeats} repeats)...")
         df = pd.read_csv(data_file)
-        X = df[FEATURE_NAMES]
+        df, active_feats = ensure_features_in_df(df)
+        X = df[active_feats]
         y_n1 = df["N1"]
         y_n2 = df["N2"]
         y_delta = df["Delta"]

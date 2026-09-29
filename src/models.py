@@ -8,7 +8,7 @@ hyperparameter tuning via Optuna with caching in config/best_params.json, full-d
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import joblib
 import numpy as np
 import pandas as pd
@@ -26,7 +26,12 @@ from config.path import (
     demo_data_file,
 )
 from src.constants import TARGET_NAMES, TOTAL_PARTICLES
-from src.features import FEATURE_NAMES, prepare_targets
+from src.features import (
+    FEATURE_NAMES,
+    create_features,
+    get_selected_features,
+    prepare_targets,
+)
 
 # Default fallback hyperparameters
 DEFAULT_FALLBACK_PARAMS: Dict[str, Any] = {
@@ -120,6 +125,25 @@ def build_regressor(params: Optional[Dict[str, Any]] = None) -> MultiOutputRegre
     return MultiOutputRegressor(base_regressor, n_jobs=1)
 
 
+def ensure_features_in_df(
+    df: pd.DataFrame, feature_names: Optional[List[str]] = None
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Ensures all requested feature columns exist in DataFrame, computing missing ones if needed.
+    Guarantees robustness when loading raw datasets or older preprocessed CSVs.
+    """
+    if feature_names is None:
+        feature_names = get_selected_features()
+    missing = [c for c in feature_names if c not in df.columns]
+    if missing:
+        df_feats = create_features(df, feature_names=feature_names)
+        df_out = df.copy()
+        for col in feature_names:
+            df_out[col] = df_feats[col]
+        return df_out, feature_names
+    return df, feature_names
+
+
 def tune_hyperparameters(
     data_path: Optional[Path] = None,
     n_trials: int = 300,
@@ -144,7 +168,8 @@ def tune_hyperparameters(
         raise FileNotFoundError(f"Training dataset for hyperparameter tuning not found: {data_path}")
 
     df = pd.read_csv(data_path)
-    X = df[FEATURE_NAMES].values
+    df, feature_names = ensure_features_in_df(df)
+    X = df[feature_names].values
     y_targets = prepare_targets(df)
     y = y_targets.values
 
@@ -247,7 +272,8 @@ def train_final_model(
         raise FileNotFoundError(f"Training dataset not found: {data_path}")
 
     df = pd.read_csv(data_path)
-    X = df[FEATURE_NAMES]
+    df, feature_names = ensure_features_in_df(df)
+    X = df[feature_names]
     y = prepare_targets(df)
 
     if params is None:
@@ -379,7 +405,8 @@ def evaluate_cv(
         )
 
     df = pd.read_csv(data_path)
-    X = df[FEATURE_NAMES].values
+    df, feature_names = ensure_features_in_df(df)
+    X = df[feature_names].values
     y_targets = prepare_targets(df)
     y = y_targets.values
 
@@ -475,7 +502,8 @@ def evaluate_train_test(
         raise FileNotFoundError(f"Dataset file not found: {data_path}")
 
     df = pd.read_csv(data_path)
-    X = df[FEATURE_NAMES]
+    df, feature_names = ensure_features_in_df(df)
+    X = df[feature_names]
     y_targets = prepare_targets(df)
 
     X_train, X_test, y_train, y_test = train_test_split(

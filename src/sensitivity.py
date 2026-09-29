@@ -7,7 +7,7 @@ centered around the CFD experimental reference design.
 
 from pathlib import Path
 import time
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -225,6 +225,8 @@ def run_sensitivity_analysis(
     ref_params: Optional[Dict[str, float]] = None,
     param_ranges: Optional[Dict[str, Tuple[float, float]]] = None,
     n_points: int = 100,
+    model: Optional[Any] = None,
+    data_path: Optional[Path] = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     Main sensitivity analysis execution function: generates 1D response profiles, 2D heatmaps, and exports CSV.
@@ -234,12 +236,13 @@ def run_sensitivity_analysis(
     if param_ranges is None:
         param_ranges = DEFAULT_PARAM_RANGES.copy()
 
-    print("[INFO] Loading surrogate model for sensitivity analysis...")
-    try:
-        model = load_model()
-    except FileNotFoundError:
-        print("[INFO] Model not found. Training surrogate model on available dataset...")
-        model, _ = train_final_model()
+    if model is None:
+        print("[INFO] Loading surrogate model for sensitivity analysis...")
+        try:
+            model = load_model()
+        except FileNotFoundError:
+            print("[INFO] Model not found. Training surrogate model on available dataset...")
+            model, _ = train_final_model(data_path=data_path)
 
     print(f"[PARAM] Geometric sensitivity parameter ranges: {param_ranges}")
     print("[INFO] Evaluating baseline predictions at CFD reference point...")
