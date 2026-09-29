@@ -18,16 +18,58 @@ from config.path import optimization_results_dir
 from src.constants import BASE_FEATURES, TOTAL_PARTICLES
 
 
+def partition_pareto_regimes(
+    df: pd.DataFrame,
+    h2_threshold: float = 0.05,
+) -> pd.Series:
+    """
+    Deterministically partitions Pareto designs into 2 physical geometric regimes based on H2:
+    - Cluster 0: High-gap regime (H2 >= h2_threshold, nominal approx 59 mm)
+    - Cluster 1: Low-gap regime (H2 < h2_threshold, nominal approx 39 mm)
+    """
+    if "H2" not in df.columns:
+        raise ValueError("Cannot partition by physical regime: 'H2' column not found.")
+    return pd.Series(np.where(df["H2"].values >= h2_threshold, 0, 1), index=df.index, dtype=int)
+
+
+def cluster_pareto_deterministic(
+    df: pd.DataFrame,
+    n_clusters: int = 2,
+    n1_col: str = "N1",
+    n2_col: str = "N2",
+    random_state: int = 42,
+) -> pd.Series:
+    """
+    Deterministic KMeans clustering on (N1, N2) with clusters ordered
+    descending by mean H2 value so that cluster 0 always corresponds to the higher H2 regime.
+    """
+    if len(df) < n_clusters:
+        return pd.Series(np.zeros(len(df), dtype=int), index=df.index)
+
+    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
+    clustering_features = df[[n1_col, n2_col]].values
+    raw_clusters = kmeans.fit_predict(clustering_features)
+    cluster_series = pd.Series(raw_clusters, index=df.index)
+
+    if "H2" in df.columns:
+        cluster_means = df.groupby(cluster_series)["H2"].mean().sort_values(ascending=False)
+        remap = {old_cid: new_cid for new_cid, old_cid in enumerate(cluster_means.index)}
+        return cluster_series.map(remap)
+    return cluster_series
+
+
 def select_optimal_configurations(
     pareto_df: Optional[pd.DataFrame] = None,
     csv_path: Optional[Path] = None,
     output_excel_path: Optional[Path] = None,
-    n_clusters: int = 3,
+    n_clusters: int = 2,
     round_decimals: bool = True,
+    clustering_method: str = "physics",
+    h2_threshold: float = 0.05,
 ) -> pd.DataFrame:
     """
     Filters, clusters, scores, and deduplicates optimal separator geometric designs:
-    - K-Means clustering on (N1, N2)
+    - 2-regime physical or deterministic clustering based on slot height H2
     - Full particle balance: N1 + N2 + N3 = 6417
     - Efficiency calculations: eta_1 (%) and eta_2 (%)
     - Geometric deduplication
@@ -55,8 +97,14 @@ def select_optimal_configurations(
     n2_col = "N2_pred" if "N2_pred" in df.columns else "N2"
     delta_col = "Delta_pred" if "Delta_pred" in df.columns else "Delta"
 
-    # K-Means clustering
-    if len(df) >= n_clusters:
+    # Physics-based regime partitioning or deterministic KMeans
+    if "H2" in df.columns and clustering_method == "physics":
+        df["cluster"] = partition_pareto_regimes(df, h2_threshold=h2_threshold)
+    elif "H2" in df.columns and clustering_method in ("kmeans", "deterministic"):
+        df["cluster"] = cluster_pareto_deterministic(
+            df, n_clusters=n_clusters, n1_col=n1_col, n2_col=n2_col
+        )
+    elif len(df) >= n_clusters:
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         clustering_features = df[[n1_col, n2_col]].values
         df["cluster"] = kmeans.fit_predict(clustering_features)
@@ -121,6 +169,13 @@ def select_optimal_configurations(
     ]
     if "cluster" in df_export.columns:
         target_cols.append("cluster")
+    if "H2" in df_export.columns:
+        df_export["regime"] = np.where(
+            df_export["H2"] >= h2_threshold,
+            "High-gap (H2 ~ 59 mm)",
+            "Low-gap (H2 ~ 39 mm)",
+        )
+        target_cols.append("regime")
 
     result_df = df_export[target_cols]
 
@@ -139,3 +194,10 @@ def select_optimal_configurations(
     print(f"[SAVE] Optimal designs exported to CSV: {csv_out}")
 
     return result_df
+
+
+__all__ = [
+    "partition_pareto_regimes",
+    "cluster_pareto_deterministic",
+    "select_optimal_configurations",
+]

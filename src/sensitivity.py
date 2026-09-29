@@ -9,10 +9,8 @@ from pathlib import Path
 import time
 from typing import Dict, Optional, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 
 from config.path import sensitivity_plots_dir
 from src.constants import (
@@ -72,64 +70,72 @@ def analyze_parameter_sensitivity(
     })
 
 
+def compute_2d_grid(
+    model,
+    param1: str,
+    param2: str,
+    range1: Tuple[float, float],
+    range2: Tuple[float, float],
+    ref_params: Dict[str, float],
+    grid_size: int = 40,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Computes 2D meshgrid and surrogate prediction surfaces for a pair of geometric parameters.
+    Keeps all other parameters fixed at reference values.
+
+    Returns:
+        Tuple of (G1, G2, N1_grid, N2_grid)
+    """
+    v1 = np.linspace(range1[0], range1[1], grid_size)
+    v2 = np.linspace(range2[0], range2[1], grid_size)
+    G1, G2 = np.meshgrid(v1, v2)
+
+    rows = []
+    for val1, val2 in zip(G1.ravel(), G2.ravel()):
+        item = ref_params.copy()
+        item[param1] = float(val1)
+        item[param2] = float(val2)
+        rows.append(item)
+
+    df_grid = pd.DataFrame(rows)
+    X_feat = create_features(df_grid)
+    n1, n2, _ = predict(model, X_feat)
+
+    N1_grid = n1.reshape(grid_size, grid_size)
+    N2_grid = n2.reshape(grid_size, grid_size)
+    return G1, G2, N1_grid, N2_grid
+
+
 def plot_sensitivity_analysis(
     results_dict: Dict[str, pd.DataFrame],
     ref_dict: Dict[str, float],
     save_path: Optional[Path] = None,
 ) -> None:
     """
-    Generates full 3x4 grid: N1, N2, and Delta vs. each geometric parameter.
+    Deprecated facade delegating to src.visualization.fig4_sensitivity.
+    Eliminates matplotlib dependency from core sensitivity calculations.
     """
-    fig, axes = plt.subplots(3, 4, figsize=(20, 12), sharey="row")
-    params = list(results_dict.keys())
-    colors = ["#0072B2", "#D55E00", "#009E73", "#E69F00"]
+    import warnings
+    warnings.warn(
+        "plot_sensitivity_analysis in src.sensitivity is deprecated. "
+        "Use src.visualization.fig4_sensitivity.plot_sensitivity_sweeps_1d instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from src.visualization.fig4_sensitivity import plot_sensitivity_sweeps_1d
 
-    for col_idx, param in enumerate(params):
-        df_p = results_dict[param]
-        unit = PARAM_UNITS.get(param, "")
+    output_dir = save_path.parent if save_path is not None else None
+    figure_name = save_path.stem if save_path is not None else "sensitivity_full"
+    formats = (save_path.suffix.lstrip(".").lower() or "png",) if save_path is not None else ("png",)
 
-        # Row 1: N1
-        ax1 = axes[0, col_idx]
-        ax1.plot(df_p[param], df_p["N1_pred"], color=colors[col_idx], linewidth=2.5, label="$N_1$")
-        ax1.axhline(ref_dict["N1_ref"], color="gray", linestyle="--", alpha=0.7, label="CFD Ref")
-        ax1.axvline(ref_dict[param], color="black", linestyle=":", alpha=0.5)
-        ax1.set_title(f"$N_1$ vs {param}")
-        ax1.set_xlabel(f"{param} [{unit}]")
-        ax1.set_ylabel("$N_1$ pred [particles/s]")
-        ax1.grid(True, linestyle=":", alpha=0.6)
-        if col_idx == 0:
-            ax1.legend()
-
-        # Row 2: N2
-        ax2 = axes[1, col_idx]
-        ax2.plot(df_p[param], df_p["N2_pred"], color=colors[col_idx], linewidth=2.5, label="$N_2$")
-        ax2.axhline(ref_dict["N2_ref"], color="gray", linestyle="--", alpha=0.7, label="CFD Ref")
-        ax2.axvline(ref_dict[param], color="black", linestyle=":", alpha=0.5)
-        ax2.set_title(f"$N_2$ vs {param}")
-        ax2.set_xlabel(f"{param} [{unit}]")
-        ax2.set_ylabel("$N_2$ pred [particles/s]")
-        ax2.grid(True, linestyle=":", alpha=0.6)
-        if col_idx == 0:
-            ax2.legend()
-
-        # Row 3: Delta
-        ax3 = axes[2, col_idx]
-        ax3.plot(df_p[param], df_p["Delta"], color=colors[col_idx], linewidth=2.5, label="$\\Delta$")
-        ax3.axhline(ref_dict["Delta_ref"], color="gray", linestyle="--", alpha=0.7, label="CFD Ref")
-        ax3.axvline(ref_dict[param], color="black", linestyle=":", alpha=0.5)
-        ax3.set_title(f"$\\Delta$ vs {param}")
-        ax3.set_xlabel(f"{param} [{unit}]")
-        ax3.set_ylabel("$\\Delta$ pred [particles/s]")
-        ax3.grid(True, linestyle=":", alpha=0.6)
-        if col_idx == 0:
-            ax3.legend()
-
-    plt.suptitle("Global Sensitivity Sweeps of Inertial Separator Geometric Parameters", fontsize=16)
-    plt.tight_layout()
-    if save_path:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path, dpi=200)
-    plt.close()
+    plot_sensitivity_sweeps_1d(
+        sensitivity_data=results_dict,
+        ref_params=ref_dict,
+        figure_name=figure_name,
+        output_dir=output_dir,
+        formats=formats,
+        save_individual=False,
+    )
 
 
 def plot_combined_view(
@@ -138,36 +144,30 @@ def plot_combined_view(
     save_path: Optional[Path] = None,
 ) -> None:
     """
-    Generates dual-Y sensitivity plots of N1 (loss) and N2 (capture) across each parameter.
+    Deprecated facade delegating to src.visualization.fig4_sensitivity.
+    Eliminates matplotlib dependency from core sensitivity calculations.
     """
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    axes = axes.flatten()
+    import warnings
+    warnings.warn(
+        "plot_combined_view in src.sensitivity is deprecated. "
+        "Use src.visualization.fig4_sensitivity.plot_sensitivity_sweeps_1d instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from src.visualization.fig4_sensitivity import plot_sensitivity_sweeps_1d
 
-    for i, (param, df_p) in enumerate(results_dict.items()):
-        ax = axes[i]
-        unit = PARAM_UNITS.get(param, "")
+    output_dir = save_path.parent if save_path is not None else None
+    figure_name = save_path.stem if save_path is not None else "sensitivity_combined"
+    formats = (save_path.suffix.lstrip(".").lower() or "png",) if save_path is not None else ("png",)
 
-        color_n1 = "#0072B2"
-        ax.set_xlabel(f"{param} [{unit}]", fontweight="bold")
-        ax.set_ylabel("Particle Loss $N_1$ [particles/s]", color=color_n1)
-        ax.plot(df_p[param], df_p["N1_pred"], color=color_n1, linewidth=2.5, label="$N_1$ (Loss)")
-        ax.tick_params(axis="y", labelcolor=color_n1)
-
-        ax2 = ax.twinx()
-        color_n2 = "#D55E00"
-        ax2.set_ylabel("Captured Particles $N_2$ [particles/s]", color=color_n2)
-        ax2.plot(df_p[param], df_p["N2_pred"], color=color_n2, linewidth=2.5, linestyle="-.", label="$N_2$ (Capture)")
-        ax2.tick_params(axis="y", labelcolor=color_n2)
-
-        ax.set_title(f"Influence of Parameter {param} on $N_1$ and $N_2$")
-        ax.grid(True, linestyle=":", alpha=0.6)
-
-    plt.suptitle("Dual-Response Sensitivity Sweeps ($N_1$ Loss vs. $N_2$ Capture)", fontsize=16)
-    plt.tight_layout()
-    if save_path:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path, dpi=200)
-    plt.close()
+    plot_sensitivity_sweeps_1d(
+        sensitivity_data=results_dict,
+        ref_params=ref_dict,
+        figure_name=figure_name,
+        output_dir=output_dir,
+        formats=formats,
+        save_individual=False,
+    )
 
 
 def plot_heatmap_interactions(
@@ -178,93 +178,46 @@ def plot_heatmap_interactions(
     grid_size: int = 40,
 ) -> None:
     """
-    Generates 2D interaction contour maps for key parameter pairs:
-    1. Alfa vs. Beta
-    2. H1 vs. H2
+    Deprecated facade delegating to src.visualization.fig4_sensitivity.
+    Eliminates matplotlib dependency from core sensitivity calculations.
     """
+    import warnings
+    warnings.warn(
+        "plot_heatmap_interactions in src.sensitivity is deprecated. "
+        "Use src.visualization.fig4_sensitivity.plot_sensitivity_heatmaps_2d instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from src.visualization.fig4_sensitivity import plot_sensitivity_heatmaps_2d
+
     if ref_params is None:
         ref_params = DEFAULT_REFERENCE_PARAMS.copy()
     if param_ranges is None:
         param_ranges = DEFAULT_PARAM_RANGES.copy()
 
-    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
+    def predict_wrapper(df_geom: pd.DataFrame):
+        X_feat = create_features(df_geom)
+        return predict(model, X_feat)
 
-    pairs = [
+    param_pairs = [
         ("Alfa", "Beta", param_ranges["Alfa"], param_ranges["Beta"]),
         ("H1", "H2", param_ranges["H1"], param_ranges["H2"]),
     ]
 
-    for pair_idx, (p1, p2, r1, r2) in enumerate(pairs):
-        v1 = np.linspace(r1[0], r1[1], grid_size)
-        v2 = np.linspace(r2[0], r2[1], grid_size)
-        G1, G2 = np.meshgrid(v1, v2)
+    output_dir = save_path.parent if save_path is not None else None
+    figure_name = save_path.stem if save_path is not None else "sensitivity_heatmaps"
+    formats = (save_path.suffix.lstrip(".").lower() or "png",) if save_path is not None else ("png",)
 
-        rows = []
-        for val1, val2 in zip(G1.ravel(), G2.ravel()):
-            item = ref_params.copy()
-            item[p1] = float(val1)
-            item[p2] = float(val2)
-            rows.append(item)
-
-        df_grid = pd.DataFrame(rows)
-        X_feat = create_features(df_grid)
-        n1, n2, _ = predict(model, X_feat)
-
-        N1_grid = n1.reshape(grid_size, grid_size)
-        N2_grid = n2.reshape(grid_size, grid_size)
-
-        ref_lbl = (
-            f"CFD Ref ({ref_params[p1]:.3f}, {ref_params[p2]:.3f})"
-            if "H" in p2
-            else f"CFD Ref ({ref_params[p1]:.1f}, {ref_params[p2]:.1f})"
-        )
-
-        # N1 Contour Map
-        ax_n1 = axes[pair_idx, 0]
-        c1 = ax_n1.contourf(G1, G2, N1_grid, levels=20, cmap="viridis_r")
-        fig.colorbar(c1, ax=ax_n1)
-        ax_n1.scatter(
-            ref_params[p1],
-            ref_params[p2],
-            color="red",
-            marker="*",
-            s=220,
-            edgecolors="white",
-            linewidth=1.5,
-            label=ref_lbl,
-            zorder=5,
-        )
-        ax_n1.set_title(f"Particle Loss $N_1$ (Minimization) for {p1} $\\times$ {p2}")
-        ax_n1.set_xlabel(f"{p1} [{PARAM_UNITS.get(p1, '')}]")
-        ax_n1.set_ylabel(f"{p2} [{PARAM_UNITS.get(p2, '')}]")
-        ax_n1.legend(loc="upper right")
-
-        # N2 Contour Map
-        ax_n2 = axes[pair_idx, 1]
-        c2 = ax_n2.contourf(G1, G2, N2_grid, levels=20, cmap="magma")
-        fig.colorbar(c2, ax=ax_n2)
-        ax_n2.scatter(
-            ref_params[p1],
-            ref_params[p2],
-            color="cyan",
-            marker="*",
-            s=220,
-            edgecolors="black",
-            linewidth=1.5,
-            label=ref_lbl,
-            zorder=5,
-        )
-        ax_n2.set_title(f"Captured Particles $N_2$ (Maximization) for {p1} $\\times$ {p2}")
-        ax_n2.set_xlabel(f"{p1} [{PARAM_UNITS.get(p1, '')}]")
-        ax_n2.set_ylabel(f"{p2} [{PARAM_UNITS.get(p2, '')}]")
-        ax_n2.legend(loc="upper right")
-
-    plt.suptitle("2D Parameter Interaction Contours around CFD Reference Design", fontsize=16)
-    plt.tight_layout()
-    if save_path:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path, dpi=200)
-    plt.close()
+    plot_sensitivity_heatmaps_2d(
+        predict_fn=predict_wrapper,
+        ref_params=ref_params,
+        param_pairs=param_pairs,
+        grid_size=grid_size,
+        figure_name=figure_name,
+        output_dir=output_dir,
+        formats=formats,
+        save_individual=False,
+    )
 
 
 def run_sensitivity_analysis(
@@ -324,3 +277,14 @@ def run_sensitivity_analysis(
 
     print(f"[OK] Sensitivity analysis successfully completed. Results saved to: {output_dir}")
     return results
+
+
+__all__ = [
+    "calculate_reference_predictions",
+    "analyze_parameter_sensitivity",
+    "compute_2d_grid",
+    "plot_sensitivity_analysis",
+    "plot_combined_view",
+    "plot_heatmap_interactions",
+    "run_sensitivity_analysis",
+]

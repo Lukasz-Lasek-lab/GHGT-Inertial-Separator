@@ -76,16 +76,27 @@ def save_best_params(params: Dict[str, Any], json_path: Optional[Path] = None) -
     return json_path
 
 
-# Global dictionary of active hyperparameters
+def get_best_params(reload: bool = False, json_path: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    Lazy getter for surrogate model hyperparameters.
+    Avoids stale configuration across pipeline steps or hyperparameter tuning runs.
+    """
+    global BEST_PARAMS
+    if reload or json_path is not None or not BEST_PARAMS:
+        BEST_PARAMS = load_best_params(json_path=json_path)
+    return BEST_PARAMS.copy()
+
+
+# Global dictionary of active hyperparameters (maintained for backward compatibility)
 BEST_PARAMS: Dict[str, Any] = load_best_params()
 
 
 def build_regressor(params: Optional[Dict[str, Any]] = None) -> MultiOutputRegressor:
     """
     Constructs MultiOutputRegressor instance wrapping HistGradientBoostingRegressor.
-    Pulls defaults from load_best_params() if not provided.
+    Pulls defaults from get_best_params() if not provided.
     """
-    model_params = load_best_params()
+    model_params = get_best_params()
     if params:
         model_params.update(params)
 
@@ -240,15 +251,16 @@ def train_final_model(
     y = prepare_targets(df)
 
     if params is None:
-        params = load_best_params()
+        params = get_best_params()
 
     model = train_model(X, y, params=params)
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, save_path)
-    # Also save to legacy path Final_Model.joblib for complete backward compatibility
+    # Save legacy copy for backward compatibility with deprecation status
     legacy_save = surrogate_models_dir / "Final_Model.joblib"
-    joblib.dump(model, legacy_save)
+    if legacy_save.resolve() != save_path.resolve():
+        joblib.dump(model, legacy_save)
 
     print(f"[OK] Production surrogate model trained on {len(df)} samples and saved to: {save_path}")
     return model, save_path
@@ -257,19 +269,24 @@ def train_final_model(
 def load_model(model_path: Optional[Path] = None) -> MultiOutputRegressor:
     """
     Loads pre-trained surrogate model from disk.
-    Checks surrogate_regressor.joblib and Final_Model.joblib before raising informative error.
+    Standard path is surrogate_regressor.joblib. Falls back to legacy Final_Model.joblib.
     """
     if model_path is None:
-        candidates = [
-            surrogate_models_dir / "surrogate_regressor.joblib",
-            surrogate_models_dir / "Final_Model.joblib",
-        ]
-        for c in candidates:
-            if c.exists():
-                model_path = c
-                break
-        if model_path is None:
-            model_path = candidates[0]
+        canonical_path = surrogate_models_dir / "surrogate_regressor.joblib"
+        legacy_path = surrogate_models_dir / "Final_Model.joblib"
+        if canonical_path.exists():
+            model_path = canonical_path
+        elif legacy_path.exists():
+            import warnings
+            warnings.warn(
+                f"Loading legacy model artifact from {legacy_path.name}. "
+                "Standard canonical model artifact is surrogate_regressor.joblib.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            model_path = legacy_path
+        else:
+            model_path = canonical_path
 
     if not model_path.exists():
         raise FileNotFoundError(
@@ -315,75 +332,30 @@ def plot_actual_vs_predicted(
     title_prefix: str = "Predictions vs. Actual (OOF 5-Fold CV)",
 ) -> None:
     """
-    Generates standard diagnostic parity and error distribution plots:
-    - 3 scatter plots: N1, N2, and Delta (actual vs. predicted) with identity lines (y = x)
-    - 1 residual distribution histogram
+    Deprecated facade delegating to src.visualization.fig2_diagnostics.plot_model_diagnostics.
+    Eliminates direct matplotlib dependency from core ML logic.
     """
-    import matplotlib.pyplot as plt
+    import warnings
+    warnings.warn(
+        "plot_actual_vs_predicted in src.models is deprecated. "
+        "Use src.visualization.fig2_diagnostics.plot_model_diagnostics instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from src.visualization.fig2_diagnostics import plot_model_diagnostics
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+    output_dir = save_path.parent if save_path is not None else None
+    figure_name = save_path.stem if save_path is not None else "Fig2_model_diagnostics"
+    formats = (save_path.suffix.lstrip(".").lower() or "png",) if save_path is not None else ("png",)
 
-    targets = [
-        ("N1", "#0072B2", axes[0, 0]),
-        ("N2", "#D55E00", axes[0, 1]),
-        ("Delta", "#009E73", axes[1, 0]),
-    ]
-
-    for target_name, color, ax in targets:
-        y_t = y_true_df[target_name].values
-        y_p = y_pred_df[target_name].values
-
-        r2 = r2_score(y_t, y_p)
-        mae = mean_absolute_error(y_t, y_p)
-        rmse = np.sqrt(mean_squared_error(y_t, y_p))
-
-        ax.scatter(y_t, y_p, color=color, alpha=0.75, edgecolors="#1A1A1A", linewidth=0.5, s=55, label="Data points")
-
-        min_val = min(y_t.min(), y_p.min())
-        max_val = max(y_t.max(), y_p.max())
-        margin = 0.05 * (max_val - min_val) if max_val != min_val else 1.0
-        line_vals = np.linspace(min_val - margin, max_val + margin, 100)
-        ax.plot(line_vals, line_vals, color="#000000", linestyle="--", linewidth=1.5, label="Identity line ($y = x$)")
-
-        ax.set_title(f"{target_name}: Actual vs. Predicted")
-        ax.set_xlabel(f"Actual {target_name} [CFD]")
-        ax.set_ylabel(f"Predicted {target_name} [Surrogate]")
-        ax.grid(True, linestyle=":", alpha=0.6)
-
-        stats_text = f"$R^2 = {r2:.4f}$\nMAE = {mae:.2f}\nRMSE = {rmse:.2f}"
-        ax.text(
-            0.05,
-            0.92,
-            stats_text,
-            transform=ax.transAxes,
-            verticalalignment="top",
-            bbox=dict(boxstyle="square,pad=0.4", facecolor="white", edgecolor="#CCCCCC", alpha=0.9),
-            fontsize=10,
-        )
-        ax.legend(loc="lower right", fontsize=9)
-
-    # Residual distribution plot
-    ax_res = axes[1, 1]
-    res_n1 = y_true_df["N1"].values - y_pred_df["N1"].values
-    res_n2 = y_true_df["N2"].values - y_pred_df["N2"].values
-
-    ax_res.hist(res_n1, bins=20, alpha=0.65, color="#0072B2", label="Residuals $N_1$ ($y - \\hat{y}$)", edgecolor="black")
-    ax_res.hist(res_n2, bins=20, alpha=0.60, color="#D55E00", label="Residuals $N_2$ ($y - \\hat{y}$)", edgecolor="black")
-    ax_res.axvline(0, color="#000000", linestyle="--", linewidth=1.5)
-    ax_res.set_title("Residual Error Distribution")
-    ax_res.set_xlabel("Prediction Error ($y_{\\mathrm{actual}} - y_{\\mathrm{pred}}$)")
-    ax_res.set_ylabel("Frequency [samples]")
-    ax_res.grid(True, linestyle=":", alpha=0.6)
-    ax_res.legend(loc="upper right", fontsize=9)
-
-    plt.suptitle(f"{title_prefix}", fontsize=15, fontweight="bold")
-    plt.tight_layout()
-
-    if save_path:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path, dpi=150)
-        print(f"[PLOT] Diagnostic plot saved to: {save_path}")
-    plt.close()
+    plot_model_diagnostics(
+        y_true_df=y_true_df,
+        y_pred_df=y_pred_df,
+        figure_name=figure_name,
+        output_dir=output_dir,
+        formats=formats,
+        save_individual=False,
+    )
 
 
 def evaluate_cv(
@@ -541,6 +513,24 @@ def evaluate_train_test(
         )
 
     return model, metrics, y_true_df, y_pred_df
+
+
+__all__ = [
+    "DEFAULT_FALLBACK_PARAMS",
+    "load_best_params",
+    "save_best_params",
+    "get_best_params",
+    "BEST_PARAMS",
+    "build_regressor",
+    "tune_hyperparameters",
+    "train_model",
+    "train_final_model",
+    "load_model",
+    "predict",
+    "plot_actual_vs_predicted",
+    "evaluate_cv",
+    "evaluate_train_test",
+]
 
 
 if __name__ == "__main__":
