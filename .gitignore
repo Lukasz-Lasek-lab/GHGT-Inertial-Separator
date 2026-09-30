@@ -30,6 +30,7 @@ Thumbs.db
 legacy/
 scratch/
 .agents/
+docs/
 
 # Data (strictly excluded proprietary CFD files)
 data/raw/

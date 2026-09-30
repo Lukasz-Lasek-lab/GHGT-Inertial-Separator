@@ -43,6 +43,9 @@ def load_raw_dataset(dataset_path: Optional[Path] = None) -> pd.DataFrame:
                 "Statement in README.md or run with '--demo' for synthetic demonstration."
             )
 
+    if dataset_path is not None and not isinstance(dataset_path, Path):
+        dataset_path = Path(dataset_path)
+
     if not dataset_path.exists():
         raise FileNotFoundError(f"Raw dataset file not found: {dataset_path}")
 
