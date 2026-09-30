@@ -31,12 +31,12 @@ This framework introduces a high-performance **hybrid AI-driven metamodeling and
 
 ## Geometric Optimization Problem
 
-| Parameter | Symbol | Domain Range | Physical Role |
-| :--- | :---: | :---: | :--- |
-| **Inlet Angle** | $\alpha$ | $42.75^\circ - 60.00^\circ$ | Gas-solid inlet trajectory and tangential momentum |
-| **Guide Angle** | $\beta$ | $42.75^\circ - 60.00^\circ$ | Deflection and vortex stabilization |
-| **Lower Height** | $H_1$ | $0.0080 - 0.0609\text{ m}$ | Separation zone depth |
-| **Upper Height** | $H_2$ | $0.0080 - 0.0609\text{ m}$ | Vortex finder / clean gas outlet position |
+| Parameter | Symbol | Domain Range |
+| :--- | :---: | :---: |
+| **Inlet Angle** | $\alpha$ | $42.75^\circ - 60.00^\circ$ |
+| **Guide Angle** | $\beta$ | $42.75^\circ - 60.00^\circ$ |
+| **Lower Height** | $H_1$ | $0.0080 - 0.0609\text{ m}$ |
+| **Upper Height** | $H_2$ | $0.0080 - 0.0609\text{ m}$ |
 
 **Optimization Objectives:**
 - $\min N_1$ (minimize escaping particle emissions / losses)
@@ -49,7 +49,7 @@ This framework introduces a high-performance **hybrid AI-driven metamodeling and
 
 ```text
 GHGT-Inertial-Separator/
-├── .gitignore               # Strict exclusion of proprietary CFD data and model binaries
+├── .gitignore               # Strict exclusion of raw CFD data and model binaries
 ├── .env.example             # Optional environment variable template
 ├── LICENSE                  # MIT License (Łukasz Lasek, UJD)
 ├── README.md                # Project documentation and reproduction guidelines
@@ -113,9 +113,9 @@ pip install -r requirements.txt
 
 ## Quick Replication & Demonstration Mode (`--demo`)
 
-For conference attendees, reviewers, and researchers wishing to immediately replicate the computational pipeline and generate Q1 vector figures without needing access to proprietary CFD meshes, a **synthetic benchmark dataset** is provided in `data/demo/inertial_separator_demo.csv`.
+For conference attendees, reviewers, and researchers wishing to immediately replicate the computational pipeline and generate Q1 vector figures without needing access to raw CFD meshes, a **synthetic benchmark dataset** is provided in `data/demo/inertial_separator_demo.csv`.
 
-> **Automatic Fallback:** The framework automatically detects if proprietary CFD data is absent and seamlessly falls back to the benchmark demonstration dataset. Adding the `--demo` flag explicitly ensures demonstration mode across all CLI commands.
+> **Automatic Fallback:** The framework automatically detects if raw CFD data is absent and seamlessly falls back to the benchmark demonstration dataset. Adding the `--demo` flag explicitly ensures demonstration mode across all CLI commands.
 
 ```bash
 # 1. Replicate all publication figures in seconds:
@@ -187,10 +187,18 @@ python -m src --all-figures
 
 ## Data and Model Availability Statement
 
-> **Notice on Proprietary Research Data:**  
-> The raw Computational Fluid Dynamics (CFD) simulation meshes and industrial particle tracking datasets used in this study are proprietary and part of ongoing industrial carbon capture research.  
-> They are available from the corresponding authors upon reasonable scientific request for academic verification and peer review (contact: `l.lasek@ujd.edu.pl`).  
+> **Notice on Research Data Availability:**  
+> The raw Computational Fluid Dynamics (CFD) simulation meshes and particle tracking datasets used in this study are available from the corresponding authors upon reasonable scientific request for academic verification and peer review (contact: `l.lasek@ujd.edu.pl`).  
 > This repository provides the **complete, open-source computational methodology, feature extraction pipeline, surrogate architecture, evolutionary optimization algorithms, publication figure reproduction code, and synthetic benchmark dataset**.
+
+---
+
+## Authors & Research Team
+
+- **Code Development & Framework Architecture:**
+  - **Łukasz Lasek** (Jan Dlugosz University in Czestochowa, contact: `l.lasek@ujd.edu.pl`)
+- **Scientific Research & Paper Co-Authors:**
+  - Łukasz Lasek, Jarosław Krzywański, Marcin Sosnowski, Karolina Grabowska, Anna Żyłka, Dorian Skrobek, Tomasz Czakiert, Rafał Rajczyk, Paweł Mirek, Jing Liu, Laihong Shen
 
 ---
 
@@ -199,10 +207,10 @@ python -m src --all-figures
 If you use this framework, parts of its methodology, or the poster presentation in your research, please cite:
 
 ```bibtex
-@article{GHGT_Inertial_Separator_2026,
+@inproceedings{GHGT_Inertial_Separator_2026,
   title={Hybrid AI-driven Approach for Optimization and Geometric Analysis of Inertial Separators in Chemical Looping Systems},
-  author={Lasek, {\L}ukasz and Contributors},
-  journal={18th International Conference on Greenhouse Gas Control Technologies (GHGT)},
+  author={Lasek, {\L}ukasz and Krzywa{\'n}ski, Jaros{\l}aw and Sosnowski, Marcin and Grabowska, Karolina and {\.Z}y{\l}ka, Anna and Skrobek, Dorian and Czakiert, Tomasz and Rajczyk, Rafa{\l} and Mirek, Pawe{\l} and Liu, Jing and Shen, Laihong},
+  booktitle={18th International Conference on Greenhouse Gas Control Technologies (GHGT-18)},
   year={2026},
   url={https://github.com/Lukasz-Lasek-Lab/GHGT-Inertial-Separator}
 }
